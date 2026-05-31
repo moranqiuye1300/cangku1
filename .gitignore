@@ -1,0 +1,10 @@
+.env
+data/media
+web/node_modules
+web/dist
+**/*.exe
+api-gateway/cmd.exe
+api-gateway/api-gateway
+api-gateway/api-gateway.exe
+user-service/cmd.exe
+video-service/cmd.exe

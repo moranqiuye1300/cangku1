@@ -1,0 +1,14 @@
+go 1.25.0
+
+use (
+	./api-gateway
+	./gen
+	./pkg/auth
+	./pkg/events
+	./pkg/limiter
+	./pkg/objectstore
+	./pkg/redislimit
+	./transcode-worker
+	./user-service
+	./video-service
+)

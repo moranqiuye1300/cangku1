@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package video.v1;
+
+option go_package = "short-video-platform/gen/videopb;videopb";
+
+service VideoService {
+  rpc GetVideoList(GetVideoListRequest) returns (GetVideoListResponse);
+  rpc GetRecommendedFeed(GetRecommendedFeedRequest) returns (GetRecommendedFeedResponse);
+  rpc GetVideoInfo(GetVideoInfoRequest) returns (GetVideoInfoResponse);
+  rpc ListVideosByUser(ListVideosByUserRequest) returns (ListVideosByUserResponse);
+  rpc CreateVideo(CreateVideoRequest) returns (CreateVideoResponse);
+  rpc UpdateTranscodeResult(UpdateTranscodeResultRequest) returns (UpdateTranscodeResultResponse);
+  rpc SearchVideos(SearchVideosRequest) returns (SearchVideosResponse);
+  rpc ListBarrages(ListBarragesRequest) returns (ListBarragesResponse);
+  rpc PostBarrage(PostBarrageRequest) returns (PostBarrageResponse);
+  rpc GetVideoEngagement(GetVideoEngagementRequest) returns (GetVideoEngagementResponse);
+  rpc ToggleLike(ToggleLikeRequest) returns (ToggleLikeResponse);
+  rpc ToggleFavorite(ToggleFavoriteRequest) returns (ToggleFavoriteResponse);
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
+  rpc PostComment(PostCommentRequest) returns (PostCommentResponse);
+  rpc ListUserLikedVideos(ListVideosByUserRequest) returns (ListVideosByUserResponse);
+  rpc ListUserFavoriteVideos(ListVideosByUserRequest) returns (ListVideosByUserResponse);
+  rpc AdminListVideos(AdminListVideosRequest) returns (AdminListVideosResponse);
+  rpc AdminSoftDeleteVideo(AdminSoftDeleteVideoRequest) returns (AdminSoftDeleteVideoResponse);
+  rpc AdminRestoreVideo(AdminRestoreVideoRequest) returns (AdminRestoreVideoResponse);
+  rpc AdminPermanentDeleteVideo(AdminPermanentDeleteVideoRequest) returns (AdminPermanentDeleteVideoResponse);
+  rpc ListRecycleBin(ListRecycleBinRequest) returns (ListRecycleBinResponse);
+  rpc ListAuditLogs(ListAuditLogsRequest) returns (ListAuditLogsResponse);
+}
+
+message Video {
+  string id = 1;
+  string user_id = 2;
+  string title = 3;
+  string description = 4;
+  string cover_url = 5;
+  string status = 6;
+  int32 duration = 7;
+  int64 created_at = 8;
+  map<string, string> play_urls = 9;
+  repeated string tags = 10;
+}
+
+message GetVideoListRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message GetVideoListResponse {
+  repeated Video videos = 1;
+  int32 total = 2;
+}
+
+message GetRecommendedFeedRequest {
+  string viewer_user_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message GetRecommendedFeedResponse {
+  repeated Video videos = 1;
+  int32 total = 2;
+  bool personalized = 3;
+}
+
+message GetVideoInfoRequest {
+  string video_id = 1;
+}
+
+message GetVideoInfoResponse {
+  Video video = 1;
+}
+
+message ListVideosByUserRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListVideosByUserResponse {
+  repeated Video videos = 1;
+  int32 total = 2;
+}
+
+message CreateVideoRequest {
+  string user_id = 1;
+  string title = 2;
+  string description = 3;
+  string source_path = 4;
+}
+
+message CreateVideoResponse {
+  Video video = 1;
+}
+
+message UpdateTranscodeResultRequest {
+  string video_id = 1;
+  string status = 2;
+  int32 duration = 3;
+  string cover_url = 4;
+  map<string, string> play_urls = 5;
+  string error_message = 6;
+  repeated string tags = 7;
+}
+
+message UpdateTranscodeResultResponse {
+  Video video = 1;
+}
+
+message SearchVideosRequest {
+  string keyword = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message SearchVideosResponse {
+  repeated Video videos = 1;
+  int32 total = 2;
+}
+
+message Barrage {
+  string id = 1;
+  string video_id = 2;
+  string user_id = 3;
+  string username = 4;
+  string content = 5;
+  int32 time_ms = 6;
+  int64 created_at = 7;
+}
+
+message ListBarragesRequest {
+  string video_id = 1;
+}
+
+message ListBarragesResponse {
+  repeated Barrage barrages = 1;
+}
+
+message PostBarrageRequest {
+  string video_id = 1;
+  string user_id = 2;
+  string username = 3;
+  string content = 4;
+  int32 time_ms = 5;
+}
+
+message PostBarrageResponse {
+  Barrage barrage = 1;
+}
+
+message VideoEngagement {
+  string video_id = 1;
+  int64 like_count = 2;
+  int64 comment_count = 3;
+  int64 favorite_count = 4;
+  bool liked = 5;
+  bool favorited = 6;
+}
+
+message GetVideoEngagementRequest {
+  string video_id = 1;
+  string viewer_user_id = 2;
+}
+
+message GetVideoEngagementResponse {
+  VideoEngagement engagement = 1;
+}
+
+message ToggleLikeRequest {
+  string video_id = 1;
+  string user_id = 2;
+}
+
+message ToggleLikeResponse {
+  bool liked = 1;
+  int64 like_count = 2;
+}
+
+message ToggleFavoriteRequest {
+  string video_id = 1;
+  string user_id = 2;
+}
+
+message ToggleFavoriteResponse {
+  bool favorited = 1;
+  int64 favorite_count = 2;
+}
+
+message Comment {
+  string id = 1;
+  string video_id = 2;
+  string user_id = 3;
+  string username = 4;
+  string content = 5;
+  int64 created_at = 6;
+}
+
+message ListCommentsRequest {
+  string video_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListCommentsResponse {
+  repeated Comment comments = 1;
+  int32 total = 2;
+}
+
+message PostCommentRequest {
+  string video_id = 1;
+  string user_id = 2;
+  string username = 3;
+  string content = 4;
+}
+
+message PostCommentResponse {
+  Comment comment = 1;
+}
+
+message AdminVideo {
+  Video video = 1;
+  int64 deleted_at = 2;
+  string deleted_by = 3;
+  string delete_reason = 4;
+  int64 purge_at = 5;
+}
+
+message AdminListVideosRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  bool include_deleted = 3;
+}
+
+message AdminListVideosResponse {
+  repeated AdminVideo videos = 1;
+  int32 total = 2;
+}
+
+message AdminSoftDeleteVideoRequest {
+  string video_id = 1;
+  string operator_id = 2;
+  string operator_username = 3;
+  string reason = 4;
+  string ip = 5;
+  string user_agent = 6;
+}
+
+message AdminSoftDeleteVideoResponse {
+  AdminVideo video = 1;
+}
+
+message AdminRestoreVideoRequest {
+  string video_id = 1;
+  string operator_id = 2;
+  string operator_username = 3;
+  string ip = 4;
+  string user_agent = 5;
+}
+
+message AdminRestoreVideoResponse {
+  Video video = 1;
+}
+
+message AdminPermanentDeleteVideoRequest {
+  string video_id = 1;
+  string operator_id = 2;
+  string operator_username = 3;
+  string ip = 4;
+  string user_agent = 5;
+}
+
+message AdminPermanentDeleteVideoResponse {}
+
+message ListRecycleBinRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ListRecycleBinResponse {
+  repeated AdminVideo videos = 1;
+  int32 total = 2;
+}
+
+message AuditLog {
+  string id = 1;
+  string action = 2;
+  string actor_id = 3;
+  string actor_username = 4;
+  string target_type = 5;
+  string target_id = 6;
+  string ip = 7;
+  string user_agent = 8;
+  string detail = 9;
+  int64 created_at = 10;
+}
+
+message ListAuditLogsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string target_type = 3;
+}
+
+message ListAuditLogsResponse {
+  repeated AuditLog logs = 1;
+  int32 total = 2;
+}

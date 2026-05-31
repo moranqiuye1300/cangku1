@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "short-video-platform/gen/userpb;userpb";
+
+import "video.proto";
+
+service UserService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
+  rpc GetUserVideos(GetUserVideosRequest) returns (GetUserVideosResponse);
+  rpc OAuthLogin(OAuthLoginRequest) returns (OAuthLoginResponse);
+  rpc UpdateAvatar(UpdateAvatarRequest) returns (UpdateAvatarResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc SetUserRole(SetUserRoleRequest) returns (SetUserRoleResponse);
+}
+
+message User {
+  string id = 1;
+  string username = 2;
+  string nickname = 3;
+  string avatar = 4;
+  int64 created_at = 5;
+  string role = 6;
+}
+
+message RegisterRequest {
+  string username = 1;
+  string password = 2;
+  string nickname = 3;
+}
+
+message RegisterResponse {
+  User user = 1;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  User user = 1;
+  string token = 2;
+}
+
+message GetUserInfoRequest {
+  string user_id = 1;
+}
+
+message GetUserInfoResponse {
+  User user = 1;
+}
+
+message GetUserVideosRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message GetUserVideosResponse {
+  repeated video.v1.Video videos = 1;
+  int32 total = 2;
+}
+
+message OAuthLoginRequest {
+  string provider = 1;
+  string oauth_id = 2;
+  string nickname = 3;
+  string avatar = 4;
+}
+
+message OAuthLoginResponse {
+  User user = 1;
+  string token = 2;
+}
+
+message UpdateAvatarRequest {
+  string user_id = 1;
+  string avatar_url = 2;
+}
+
+message UpdateAvatarResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+}
+
+message SetUserRoleRequest {
+  string user_id = 1;
+  string role = 2;
+}
+
+message SetUserRoleResponse {
+  User user = 1;
+}

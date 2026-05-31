@@ -1,0 +1,5 @@
+cmd.exe
+api-gateway
+api-gateway.exe
+*.test
+.git
