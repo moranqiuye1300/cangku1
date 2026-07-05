@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -155,11 +156,11 @@ func (h *Handler) GetRecommendedFeed(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{
-		"videos":        resp.GetVideos(),
-		"total":         resp.GetTotal(),
-		"page":          page,
-		"page_size":     pageSize,
-		"personalized":  resp.GetPersonalized(),
+		"videos":       resp.GetVideos(),
+		"total":        resp.GetTotal(),
+		"page":         page,
+		"page_size":    pageSize,
+		"personalized": resp.GetPersonalized(),
 	})
 }
 
@@ -171,6 +172,132 @@ func (h *Handler) GetVideo(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"video": resp.GetVideo()})
+}
+
+type initChunkUploadReq struct {
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+	Filename    string `json:"filename" binding:"required"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size" binding:"required"`
+	ChunkSize   int64  `json:"chunk_size"`
+}
+
+type completeChunkUploadReq struct {
+	SessionID   string `json:"session_id" binding:"required"`
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) InitChunkUpload(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid, ok := userID.(string)
+	if !ok || uid == "" {
+		response.Fail(c, 401, 40100, "unauthorized")
+		return
+	}
+	var req initChunkUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40001, err.Error())
+		return
+	}
+	if req.Size <= 0 {
+		response.Fail(c, 400, 40001, "size must be positive")
+		return
+	}
+	const maxVideoBytes = 200 << 20
+	if req.Size > maxVideoBytes {
+		response.Fail(c, 400, 40001, "video file too large (max 200MB)")
+		return
+	}
+	if req.ContentType == "" {
+		req.ContentType = "application/octet-stream"
+	}
+	session, err := storage.CreateUploadSession(storage.MediaRoot(), uid, "", req.Filename, req.ContentType, req.Size, req.ChunkSize)
+	if err != nil {
+		response.Fail(c, 500, 50000, err.Error())
+		return
+	}
+	response.OK(c, gin.H{"session_id": session.ID, "chunk_count": session.ChunkCount, "chunk_size": session.ChunkSize})
+}
+
+func (h *Handler) UploadChunk(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid, ok := userID.(string)
+	if !ok || uid == "" {
+		response.Fail(c, 401, 40100, "unauthorized")
+		return
+	}
+	sessionID := strings.TrimSpace(c.PostForm("session_id"))
+	chunkIndexStr := strings.TrimSpace(c.PostForm("chunk_index"))
+	if sessionID == "" || chunkIndexStr == "" {
+		response.Fail(c, 400, 40001, "session_id and chunk_index are required")
+		return
+	}
+	chunkIndex, err := strconv.Atoi(chunkIndexStr)
+	if err != nil || chunkIndex < 0 {
+		response.Fail(c, 400, 40001, "invalid chunk_index")
+		return
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.Fail(c, 400, 40001, "file is required")
+		return
+	}
+	if file.Size <= 0 {
+		response.Fail(c, 400, 40001, "empty file")
+		return
+	}
+	src, err := file.Open()
+	if err != nil {
+		response.Fail(c, 500, 50000, err.Error())
+		return
+	}
+	defer src.Close()
+	if err := storage.SaveUploadChunk(storage.MediaRoot(), sessionID, chunkIndex, src, file.Size); err != nil {
+		response.Fail(c, 500, 50000, err.Error())
+		return
+	}
+	status, err := storage.GetUploadSessionStatus(storage.MediaRoot(), sessionID)
+	if err != nil {
+		response.Fail(c, 500, 50000, err.Error())
+		return
+	}
+	if status.UserID != "" && status.UserID != uid {
+		response.Fail(c, 403, 40300, "session does not belong to user")
+		return
+	}
+	response.OK(c, gin.H{"session_id": sessionID, "chunk_index": chunkIndex, "uploaded_chunks": status.Uploaded, "total_chunks": status.ChunkCount})
+}
+
+func (h *Handler) CompleteChunkUpload(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid, ok := userID.(string)
+	if !ok || uid == "" {
+		response.Fail(c, 401, 40100, "unauthorized")
+		return
+	}
+	var req completeChunkUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40001, err.Error())
+		return
+	}
+	relPath, err := storage.CompleteUploadFromChunks(storage.MediaRoot(), req.SessionID, uid)
+	if err != nil {
+		response.Fail(c, 500, 50000, err.Error())
+		return
+	}
+	resp, err := h.videoClient.CreateVideo(h.ctx(c), &videopb.CreateVideoRequest{
+		UserId:      uid,
+		Title:       req.Title,
+		Description: req.Description,
+		SourcePath:  relPath,
+	})
+	if err != nil {
+		h.writeGRPCError(c, err)
+		return
+	}
+	response.OK(c, gin.H{"video": resp.GetVideo(), "source_path": relPath})
 }
 
 func (h *Handler) UploadVideo(c *gin.Context) {
@@ -198,6 +325,12 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 		return
 	}
 
+	const maxVideoBytes = 200 << 20
+	if file.Size > maxVideoBytes {
+		response.Fail(c, 400, 40001, "video file too large (max 200MB)")
+		return
+	}
+
 	mediaRoot := storage.MediaRoot()
 	tempID := fmt.Sprintf("temp-%d", time.Now().UnixNano())
 	src, err := file.Open()
@@ -207,7 +340,7 @@ func (h *Handler) UploadVideo(c *gin.Context) {
 	}
 	defer src.Close()
 
-	relPath, err := storage.SaveUpload(mediaRoot, tempID, file.Filename, src)
+	relPath, err := storage.SaveUpload(mediaRoot, uid, tempID, file.Filename, src)
 	if err != nil {
 		response.Fail(c, 500, 50000, err.Error())
 		return

@@ -2,3 +2,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.32.1
 httpx==0.28.1
 pydantic==2.10.3
+
+# Lightweight RAG: ChromaDB with built-in embedding (no torch)
+chromadb>=0.5.0
+python-multipart==0.0.6

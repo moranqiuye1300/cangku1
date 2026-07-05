@@ -7,25 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"short-video-platform/api-gateway/internal/response"
-	"short-video-platform/pkg/limiter"
 	"short-video-platform/pkg/redislimit"
 )
 
+// RateLimit applies per-IP limits via Redis when available (no global shared bucket).
 func RateLimit() gin.HandlerFunc {
 	redisLimiter, _ := redislimit.NewFromEnv()
-	mem := limiter.New(parseFloatEnv("RATE_LIMIT_RPS", 50), parseIntEnv("RATE_LIMIT_BURST", 100))
 
 	return func(c *gin.Context) {
-		key := redislimit.ClientIPKey(c.ClientIP())
-		if redisLimiter != nil {
-			ok, err := redisLimiter.Allow(c.Request.Context(), key)
-			if err == nil && !ok {
-				response.Fail(c, 429, 42900, "too many requests")
-				c.Abort()
-				return
-			}
+		if redisLimiter == nil {
+			c.Next()
+			return
 		}
-		if !mem.Allow() {
+		key := redislimit.ClientIPKey(c.ClientIP())
+		ok, err := redisLimiter.Allow(c.Request.Context(), key)
+		if err == nil && !ok {
 			response.Fail(c, 429, 42900, "too many requests")
 			c.Abort()
 			return

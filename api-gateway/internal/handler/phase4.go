@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 
 	"short-video-platform/api-gateway/internal/response"
 	"short-video-platform/gen/videopb"
-	"short-video-platform/pkg/auth"
 )
 
 type postBarrageReq struct {
@@ -24,12 +22,17 @@ type postBarrageReq struct {
 
 func (h *Handler) ListBarrages(c *gin.Context) {
 	videoID := c.Param("id")
-	resp, err := h.videoClient.ListBarrages(h.ctx(c), &videopb.ListBarragesRequest{VideoId: videoID})
+	page, pageSize := pageQuery(c)
+	resp, err := h.videoClient.ListBarrages(h.ctx(c), &videopb.ListBarragesRequest{
+		VideoId:  videoID,
+		Page:     page,
+		PageSize: pageSize,
+	})
 	if err != nil {
 		h.writeGRPCError(c, err)
 		return
 	}
-	response.OK(c, gin.H{"barrages": resp.GetBarrages()})
+	response.OK(c, gin.H{"barrages": resp.GetBarrages(), "total": resp.GetTotal()})
 }
 
 func (h *Handler) PostBarrage(c *gin.Context) {
@@ -62,7 +65,8 @@ func (h *Handler) PostBarrage(c *gin.Context) {
 }
 
 type aiAskReq struct {
-	Question string `json:"question" binding:"required,min=2,max=500"`
+	Question        string   `json:"question" binding:"required,min=2,max=500"`
+	ContextVideoIDs []string `json:"context_video_ids"` // from Feed personalized list
 }
 
 func (h *Handler) AIAsk(c *gin.Context) {
@@ -75,14 +79,20 @@ func (h *Handler) AIAsk(c *gin.Context) {
 	if base == "" {
 		base = "http://ai-service:8090"
 	}
-	payload, _ := json.Marshal(map[string]string{"question": req.Question})
-	httpReq, err := http.NewRequest(http.MethodPost, base+"/rag/ask", bytes.NewReader(payload))
+
+	payload := map[string]any{
+		"question":          req.Question,
+		"context_video_ids": req.ContextVideoIDs,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	httpReq, err := http.NewRequest(http.MethodPost, base+"/rag/ask", bytes.NewReader(bodyBytes))
 	if err != nil {
 		response.Fail(c, 500, 50000, err.Error())
 		return
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		response.Fail(c, 503, 50300, "ai service unavailable")
@@ -100,12 +110,4 @@ func (h *Handler) AIAsk(c *gin.Context) {
 		return
 	}
 	response.OK(c, data)
-}
-
-func (h *Handler) ctx(c *gin.Context) context.Context {
-	ctx := c.Request.Context()
-	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
-		ctx = auth.WithBearer(ctx, strings.TrimPrefix(authHeader, "Bearer "))
-	}
-	return ctx
 }

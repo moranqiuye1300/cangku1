@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import AuthLayout from '../components/AuthLayout.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -32,22 +33,25 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="page-center">
-    <form class="card card-body-lg form" @submit.prevent="handleSubmit">
-      <h1 class="page-title">注册</h1>
-      <p class="page-desc">创建账号后即可登录平台</p>
-
+  <AuthLayout title="注册" subtitle="创建账号后即可上传与互动">
+    <form class="auth-form" @submit.prevent="handleSubmit">
       <label class="field">
         用户名
-        <input v-model="form.username" type="text" minlength="3" required />
+        <input v-model="form.username" type="text" minlength="3" required autocomplete="username" />
       </label>
       <label class="field">
         昵称
-        <input v-model="form.nickname" type="text" />
+        <input v-model="form.nickname" type="text" autocomplete="nickname" />
       </label>
       <label class="field">
         密码
-        <input v-model="form.password" type="password" minlength="6" required />
+        <input
+          v-model="form.password"
+          type="password"
+          minlength="6"
+          required
+          autocomplete="new-password"
+        />
       </label>
 
       <p v-if="error" class="text-error">{{ error }}</p>
@@ -61,12 +65,12 @@ async function handleSubmit() {
         <RouterLink to="/login">去登录</RouterLink>
       </p>
     </form>
-  </div>
+  </AuthLayout>
 </template>
 
 <style scoped>
-.form {
-  width: min(420px, 100%);
+.auth-form {
+  margin: 0;
 }
 
 .foot {

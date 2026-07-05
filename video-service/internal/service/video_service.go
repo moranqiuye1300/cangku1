@@ -1,12 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"short-video-platform/pkg/events"
+	"short-video-platform/pkg/auth"
 	"short-video-platform/video-service/internal/kafka"
 	"short-video-platform/video-service/internal/model"
 	"short-video-platform/video-service/internal/repository"
@@ -29,15 +33,21 @@ func NewVideoService(repo repository.VideoRepository, barrageRepo *repository.Ba
 	return &VideoService{repo: repo, barrageRepo: barrageRepo, interactRepo: interactRepo, auditRepo: auditRepo, archiveRepo: archiveRepo, prefRepo: prefRepo, producer: producer, search: searchClient}
 }
 
-func (s *VideoService) ListBarrages(ctx context.Context, videoID string) ([]model.Barrage, error) {
-	if _, err := s.repo.GetByID(ctx, videoID); err != nil {
-		return nil, err
+func (s *VideoService) ListBarrages(ctx context.Context, videoID string, page, pageSize int) ([]model.Barrage, int, error) {
+	if _, err := s.requirePublished(ctx, videoID); err != nil {
+		return nil, 0, err
 	}
-	return s.barrageRepo.ListByVideo(ctx, videoID)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 100
+	}
+	return s.barrageRepo.ListByVideo(ctx, videoID, page, pageSize)
 }
 
 func (s *VideoService) PostBarrage(ctx context.Context, videoID, userID, username, content string, timeMs int32) (*model.Barrage, error) {
-	if _, err := s.repo.GetByID(ctx, videoID); err != nil {
+	if _, err := s.requirePublished(ctx, videoID); err != nil {
 		return nil, err
 	}
 	content = strings.TrimSpace(content)
@@ -58,7 +68,7 @@ func (s *VideoService) PostBarrage(ctx context.Context, videoID, userID, usernam
 }
 
 func (s *VideoService) GetEngagement(ctx context.Context, videoID, viewerUserID string) (*model.Engagement, error) {
-	if _, err := s.repo.GetByID(ctx, videoID); err != nil {
+	if _, err := s.requirePublished(ctx, videoID); err != nil {
 		return nil, err
 	}
 	stats, err := s.interactRepo.GetStats(ctx, videoID)
@@ -84,7 +94,7 @@ func (s *VideoService) GetEngagement(ctx context.Context, videoID, viewerUserID 
 }
 
 func (s *VideoService) ToggleLike(ctx context.Context, videoID, userID string) (bool, int64, error) {
-	v, err := s.repo.GetByID(ctx, videoID)
+	v, err := s.requirePublished(ctx, videoID)
 	if err != nil {
 		return false, 0, err
 	}
@@ -101,7 +111,7 @@ func (s *VideoService) ToggleLike(ctx context.Context, videoID, userID string) (
 }
 
 func (s *VideoService) ToggleFavorite(ctx context.Context, videoID, userID string) (bool, int64, error) {
-	v, err := s.repo.GetByID(ctx, videoID)
+	v, err := s.requirePublished(ctx, videoID)
 	if err != nil {
 		return false, 0, err
 	}
@@ -118,14 +128,14 @@ func (s *VideoService) ToggleFavorite(ctx context.Context, videoID, userID strin
 }
 
 func (s *VideoService) ListComments(ctx context.Context, videoID string, page, pageSize int) ([]model.Comment, int, error) {
-	if _, err := s.repo.GetByID(ctx, videoID); err != nil {
+	if _, err := s.requirePublished(ctx, videoID); err != nil {
 		return nil, 0, err
 	}
 	return s.interactRepo.ListComments(ctx, videoID, page, pageSize)
 }
 
 func (s *VideoService) PostComment(ctx context.Context, videoID, userID, username, content string) (*model.Comment, error) {
-	if _, err := s.repo.GetByID(ctx, videoID); err != nil {
+	if _, err := s.requirePublished(ctx, videoID); err != nil {
 		return nil, err
 	}
 	content = strings.TrimSpace(content)
@@ -170,6 +180,9 @@ func (s *VideoService) videosByIDs(ctx context.Context, ids []string) []model.Vi
 			}
 			continue
 		}
+		if v.Status != model.StatusReady {
+			continue
+		}
 		out = append(out, *v)
 	}
 	return out
@@ -183,7 +196,17 @@ func (s *VideoService) ReindexSearch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.search.ReindexAll(ctx, list)
+	return s.search.ReindexAll(ctx, publishedOnly(list))
+}
+
+func publishedOnly(list []model.Video) []model.Video {
+	out := make([]model.Video, 0, len(list))
+	for i := range list {
+		if list[i].Status == model.StatusReady {
+			out = append(out, list[i])
+		}
+	}
+	return out
 }
 
 func (s *VideoService) Search(ctx context.Context, keyword string, page, pageSize int) ([]model.Video, int, error) {
@@ -207,13 +230,16 @@ func (s *VideoService) Search(ctx context.Context, keyword string, page, pageSiz
 			}
 			return nil, 0, err
 		}
+		if v.Status != model.StatusReady {
+			continue
+		}
 		out = append(out, *v)
 	}
 	return out, total, nil
 }
 
 func (s *VideoService) indexVideo(ctx context.Context, v *model.Video) {
-	if s.search != nil && v != nil {
+	if s.search != nil && v != nil && v.Status == model.StatusReady {
 		_ = s.search.Index(ctx, v)
 	}
 }
@@ -228,14 +254,17 @@ func (s *VideoService) List(ctx context.Context, page, pageSize int) ([]model.Vi
 	return s.repo.List(ctx, page, pageSize)
 }
 
-func (s *VideoService) ListByUser(ctx context.Context, userID string, page, pageSize int) ([]model.Video, int, error) {
+func (s *VideoService) ListByUser(ctx context.Context, userID, viewerUserID string, page, pageSize int) ([]model.Video, int, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 50 {
 		pageSize = 10
 	}
-	return s.repo.ListByUser(ctx, userID, page, pageSize)
+	if viewerUserID != "" && viewerUserID == userID {
+		return s.repo.ListByUser(ctx, userID, page, pageSize)
+	}
+	return s.repo.ListByUserPublished(ctx, userID, page, pageSize)
 }
 
 func (s *VideoService) GetByID(ctx context.Context, id string) (*model.Video, error) {
@@ -243,17 +272,20 @@ func (s *VideoService) GetByID(ctx context.Context, id string) (*model.Video, er
 }
 
 func (s *VideoService) Create(ctx context.Context, userID, title, description, sourcePath string) (*model.Video, error) {
-	count, err := s.repo.Count(ctx)
+	if err := auth.ValidateSourcePathForUser(userID, sourcePath); err != nil {
+		return nil, err
+	}
+	nextID, err := s.repo.NextVideoID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	video := &model.Video{
-		ID:          fmt.Sprintf("v%d", count+1),
+		ID:          nextID,
 		UserID:      userID,
 		Title:       title,
 		Description: description,
 		CoverURL:    "",
-		Status:      model.StatusPending,
+		Status:      model.StatusPendingSourceReview,
 		Duration:    0,
 		CreatedAt:   time.Now().Unix(),
 		PlayURLs:    map[string]string{},
@@ -262,27 +294,27 @@ func (s *VideoService) Create(ctx context.Context, userID, title, description, s
 	if err := s.repo.Create(ctx, video); err != nil {
 		return nil, err
 	}
-	if s.producer != nil {
-		if err := s.producer.PublishTranscode(events.TranscodeTask{
-			VideoID:     video.ID,
-			UserID:      userID,
-			SourcePath:  sourcePath,
-			Title:       title,
-			Description: description,
-		}); err != nil {
-			_ = s.repo.UpdateStatus(ctx, video.ID, model.StatusFailed)
-			return nil, fmt.Errorf("publish transcode task: %w", err)
-		}
-		_ = s.repo.UpdateStatus(ctx, video.ID, model.StatusTranscoding)
-		video.Status = model.StatusTranscoding
-	}
-	s.indexVideo(ctx, video)
 	return video, nil
 }
 
 func (s *VideoService) UpdateTranscodeResult(ctx context.Context, videoID, status string, duration int32, coverURL string, playURLs map[string]string, errMsg string, incomingTags []string) (*model.Video, error) {
+	current, err := s.repo.GetByIDIncludingDeleted(ctx, videoID)
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case model.StatusPendingFinalReview, model.StatusFailed:
+		if current.Status != model.StatusTranscoding {
+			return nil, fmt.Errorf("invalid status transition from %s to %s", current.Status, status)
+		}
+	case model.StatusReady:
+		return nil, fmt.Errorf("cannot publish via transcode callback; awaiting final review")
+	default:
+		return nil, fmt.Errorf("invalid transcode status: %s", status)
+	}
+
 	tags := incomingTags
-	if status == model.StatusReady {
+	if status == model.StatusPendingFinalReview || status == model.StatusReady {
 		current, err := s.repo.GetByIDIncludingDeleted(ctx, videoID)
 		if err == nil && current != nil {
 			localTags := tagging.Extract(current.Title, current.Description)
@@ -293,7 +325,9 @@ func (s *VideoService) UpdateTranscodeResult(ctx context.Context, videoID, statu
 	if err != nil {
 		return nil, err
 	}
-	s.indexVideo(ctx, v)
+	if v.Status == model.StatusReady {
+		s.indexVideo(ctx, v)
+	}
 	return v, nil
 }
 
@@ -351,4 +385,39 @@ func DefaultSeedVideos() []model.Video {
 		seed[i].Tags = tagging.Extract(seed[i].Title, seed[i].Description)
 	}
 	return seed
+}
+
+// indexVideoToAI sends the video to ai-service for Chroma embedding (RAG on Feed).
+// Best-effort: errors are logged but do not block publishing.
+func (s *VideoService) indexVideoToAI(ctx context.Context, v *model.Video) error {
+	base := strings.TrimRight(os.Getenv("AI_SERVICE_URL"), "/")
+	if base == "" {
+		base = "http://ai-service:8090"
+	}
+
+	payload := map[string]any{
+		"video_id":    v.ID,
+		"title":       v.Title,
+		"description": v.Description,
+		"tags":        v.Tags,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/videos/index", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("ai index failed: status %d", resp.StatusCode)
+	}
+	return nil
 }

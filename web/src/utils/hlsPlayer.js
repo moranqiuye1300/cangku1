@@ -32,7 +32,13 @@ export function hasPlayUrls(playUrls) {
 export function mountHls(videoEl, url) {
   if (!videoEl || !url) return null
   if (Hls.isSupported()) {
-    const hls = new Hls({ enableWorker: true })
+    const hls = new Hls({
+      enableWorker: true,
+      maxBufferLength: 20,
+      maxMaxBufferLength: 40,
+      startLevel: -1,
+      capLevelToPlayerSize: true
+    })
     hls.loadSource(url)
     hls.attachMedia(videoEl)
     return hls
@@ -63,5 +69,19 @@ export function remountAtTime(videoEl, url, currentTime, prevHls) {
 export function destroyHls(hls) {
   if (hls) {
     hls.destroy()
+  }
+}
+
+export function seekWhenReady(videoEl, time, onSeeked) {
+  if (!videoEl || !Number.isFinite(time) || time <= 0) return
+  const seek = () => {
+    const max = videoEl.duration || time
+    videoEl.currentTime = Math.min(time, max)
+    onSeeked?.(videoEl.currentTime)
+  }
+  if (videoEl.readyState >= 1) {
+    seek()
+  } else {
+    videoEl.addEventListener('loadedmetadata', seek, { once: true })
   }
 }

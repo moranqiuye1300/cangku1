@@ -52,6 +52,7 @@ func ensureIndexes(ctx context.Context, db *mongo.Database) error {
 	_, err := videos.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "video_id", Value: 1}}, Options: options.Index().SetUnique(true)},
 		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
+		{Keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}}},
 	})
 	if err != nil {
 		return fmt.Errorf("videos indexes: %w", err)
@@ -59,7 +60,7 @@ func ensureIndexes(ctx context.Context, db *mongo.Database) error {
 
 	barrages := db.Collection("barrages")
 	_, err = barrages.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "video_id", Value: 1}, {Key: "time_offset", Value: 1}},
+		Keys: bson.D{{Key: "video_id", Value: 1}, {Key: "time_ms", Value: 1}},
 	})
 	if err != nil {
 		return fmt.Errorf("barrages indexes: %w", err)

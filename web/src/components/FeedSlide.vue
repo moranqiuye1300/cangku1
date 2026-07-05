@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { computed, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchVideo } from '../api/video'
 import { fetchBarrages, postBarrage } from '../api/barrage'
@@ -18,18 +18,31 @@ import {
   hasPlayUrls,
   mountHls,
   remountAtTime,
+  seekWhenReady,
   sortedQualities
 } from '../utils/hlsPlayer'
 import { isSoundUnlocked, markSoundUnlocked } from '../utils/soundUnlock'
+import { saveProgress, loadProgress, formatPlaybackTime } from '../utils/playbackMemory'
+import { throttle } from '../utils/throttle'
+import { videoStatusLabel } from '../utils/videoStatus'
+
+defineOptions({ name: 'FeedSlide' })
 
 const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5, 2]
 const VOLUME_KEY = 'svp_volume'
+const RATE_KEY = 'svp_rate'
+const MAX_FLYING_DANMAKU = 8
 
 function loadStoredVolume() {
-  const raw = sessionStorage.getItem(VOLUME_KEY)
+  const raw = localStorage.getItem(VOLUME_KEY)
   if (raw == null) return 0.85
   const n = Number(raw)
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.85
+}
+
+function loadStoredRate() {
+  const n = Number(localStorage.getItem(RATE_KEY))
+  return SPEED_OPTIONS.includes(n) ? n : 1
 }
 
 const props = defineProps({
@@ -61,7 +74,10 @@ const commentText = ref('')
 const barrageText = ref('')
 const barrages = ref([])
 const flyingDanmaku = ref([])
+const showSwipeHint = ref(false)
+let swipeHintTimer = null
 let hls = null
+const SWIPE_HINT_KEY = 'svp_feed_swipe_hint'
 let pollTimer = null
 let toastTimer = null
 let danmakuSeq = 0
@@ -70,14 +86,29 @@ let lastPlaybackTime = 0
 
 const volume = ref(loadStoredVolume())
 const muted = ref(false)
-const playbackRate = ref(1)
+const playbackRate = ref(loadStoredRate())
 const currentQuality = ref('')
 const showQualityMenu = ref(false)
 const showSpeedMenu = ref(false)
 const showVolumePanel = ref(false)
 const needSoundUnlock = ref(false)
+const playbackTime = ref(0)
+const videoDuration = ref(0)
 
 const availableQualities = computed(() => sortedQualities(localVideo.value?.play_urls || {}))
+
+const progressPercent = computed(() => {
+  if (!videoDuration.value) return 0
+  return Math.min(100, (playbackTime.value / videoDuration.value) * 100)
+})
+
+const showPiP = computed(
+  () => typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled)
+)
+
+const throttledSaveProgress = throttle((id, time) => {
+  saveProgress(id, time)
+}, 2000)
 
 function qualityLabel(q) {
   const map = { '1080p': '1080P', '720p': '720P', '480p': '480P', '360p': '360P' }
@@ -86,6 +117,16 @@ function qualityLabel(q) {
 
 function speedLabel(rate) {
   return rate === 1 ? '1.0x' : `${rate}x`
+}
+
+function onVolumeBtnClick() {
+  if (needSoundUnlock.value) {
+    unlockSound()
+    return
+  }
+  showVolumePanel.value = !showVolumePanel.value
+  showQualityMenu.value = false
+  showSpeedMenu.value = false
 }
 
 function closeControlMenus() {
@@ -102,7 +143,11 @@ function applyVideoSettings() {
 }
 
 function persistVolume() {
-  sessionStorage.setItem(VOLUME_KEY, String(volume.value))
+  localStorage.setItem(VOLUME_KEY, String(volume.value))
+}
+
+function persistRate() {
+  localStorage.setItem(RATE_KEY, String(playbackRate.value))
 }
 
 function unlockSound() {
@@ -138,8 +183,44 @@ function onVolumeInput(e) {
 
 function setPlaybackRate(rate) {
   playbackRate.value = rate
+  persistRate()
   applyVideoSettings()
   showSpeedMenu.value = false
+}
+
+async function toggleFullscreen() {
+  closeControlMenus()
+  const el = videoEl.value?.closest('.media-wrap')
+  if (!el) return
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    } else {
+      await el.requestFullscreen?.()
+    }
+  } catch {
+    showToast('全屏不可用')
+  }
+}
+
+async function togglePiP() {
+  closeControlMenus()
+  if (!videoEl.value) return
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture()
+    } else if (document.pictureInPictureEnabled) {
+      await videoEl.value.requestPictureInPicture()
+    } else {
+      showToast('小窗播放不可用')
+    }
+  } catch {
+    showToast('小窗播放不可用')
+  }
+}
+
+function onDocumentClick() {
+  closeControlMenus()
 }
 
 async function switchQuality(quality) {
@@ -243,6 +324,7 @@ async function loadBarrages() {
 }
 
 function spawnDanmaku(content, topPercent) {
+  if (flyingDanmaku.value.length >= MAX_FLYING_DANMAKU) return
   const top = topPercent ?? 10 + Math.random() * 55
   const key = `dm-${++danmakuSeq}`
   const hue = Math.floor(Math.random() * 360)
@@ -260,6 +342,11 @@ function barrageTimeMs(b) {
 function onVideoTimeUpdate() {
   if (!videoEl.value || !props.active) return
   const current = videoEl.value.currentTime
+  playbackTime.value = current
+  if (videoEl.value.duration && Number.isFinite(videoEl.value.duration)) {
+    videoDuration.value = videoEl.value.duration
+  }
+  throttledSaveProgress(localVideo.value.id, current)
   if (current < lastPlaybackTime - 0.4) {
     shownBarrageKeys.clear()
   }
@@ -320,6 +407,13 @@ async function setupPlayer() {
   hls = mountHls(videoEl.value, url)
   paused.value = false
   bindVideoEvents()
+  const saved = loadProgress(localVideo.value.id)
+  if (saved > 3) {
+    seekWhenReady(videoEl.value, saved, () => {
+      showToast(`已从 ${formatPlaybackTime(saved)} 继续播放`)
+    })
+  }
+  applyVideoSettings()
   await tryAutoplay()
 }
 
@@ -365,11 +459,17 @@ function setupPolling() {
     try {
       const res = await fetchVideo(v.id)
       localVideo.value = res.data.video
-      if (hasPlayUrls(localVideo.value.play_urls)) {
+      if (localVideo.value.status === 'ready' && hasPlayUrls(localVideo.value.play_urls)) {
         clearInterval(pollTimer)
         await setupPlayer()
       } else if (localVideo.value.status === 'failed') {
         clearInterval(pollTimer)
+      } else if (
+        localVideo.value.status === 'pending_final_review' &&
+        hasPlayUrls(localVideo.value.play_urls)
+      ) {
+        clearInterval(pollTimer)
+        await setupPlayer()
       }
     } catch {
       // ignore
@@ -499,14 +599,26 @@ watch(
   }
 )
 
+function maybeShowSwipeHint() {
+  if (!props.active || localStorage.getItem(SWIPE_HINT_KEY)) return
+  showSwipeHint.value = true
+  clearTimeout(swipeHintTimer)
+  swipeHintTimer = setTimeout(() => {
+    showSwipeHint.value = false
+    localStorage.setItem(SWIPE_HINT_KEY, '1')
+  }, 3200)
+}
+
 watch(
   () => [props.active, props.renderPlayer, localVideo.value?.play_urls],
   async ([active, render]) => {
     if (active && render) {
+      maybeShowSwipeHint()
       await setupPlayer()
       setupPolling()
       if (active) await Promise.all([loadEngagement(), loadBarrages()])
     } else if (!active) {
+      showSwipeHint.value = false
       clearInterval(pollTimer)
       teardownPlayer()
     }
@@ -514,11 +626,19 @@ watch(
   { immediate: true, deep: true }
 )
 
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
   clearInterval(pollTimer)
   clearTimeout(toastTimer)
+  clearTimeout(swipeHintTimer)
   teardownPlayer()
 })
+
+defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 </script>
 
 <template>
@@ -541,24 +661,41 @@ onBeforeUnmount(() => {
             :src="localVideo.cover_url"
             :alt="localVideo.title"
             class="cover"
+            :loading="active ? 'eager' : 'lazy'"
+            decoding="async"
           />
-          <div v-else class="cover placeholder" />
+          <div v-else class="cover placeholder skeleton skeleton--dark" />
         </template>
+
+        <div v-if="showSwipeHint" class="swipe-hint" @click.stop>
+          上下滑动 · 切换视频
+        </div>
 
         <div v-if="showPlayHint && paused" class="play-hint" aria-hidden="true">
           <span class="play-icon">▶</span>
         </div>
 
         <div
-          v-if="!hasPlayUrls(localVideo.play_urls)"
+          v-if="localVideo.status !== 'ready' && !hasPlayUrls(localVideo.play_urls)"
           class="status-banner"
           @click.stop
         >
-          <p v-if="localVideo.status === 'transcoding' || localVideo.status === 'pending'">
+          <p v-if="localVideo.status === 'pending_source_review'">
+            {{ videoStatusLabel('pending_source_review') }}，等待审核
+          </p>
+          <p v-else-if="localVideo.status === 'transcoding' || localVideo.status === 'pending'">
             转码中，上滑看下一条
           </p>
           <p v-else-if="localVideo.status === 'failed'">转码失败</p>
-          <p v-else>暂无可播放地址</p>
+          <p v-else>{{ videoStatusLabel(localVideo.status) }}</p>
+        </div>
+
+        <div
+          v-else-if="localVideo.status === 'pending_final_review'"
+          class="status-banner status-banner--info"
+          @click.stop
+        >
+          <p>{{ videoStatusLabel('pending_final_review') }}，可预览，尚未公开发布</p>
         </div>
 
         <div class="gradient" />
@@ -573,6 +710,13 @@ onBeforeUnmount(() => {
             {{ d.content }}
           </span>
         </div>
+
+        <footer class="meta" @click.stop>
+          <h2 class="title">{{ localVideo.title }}</h2>
+          <p v-if="localVideo.tags?.length" class="tags">
+            <span v-for="tag in localVideo.tags" :key="tag" class="tag">#{{ tag }}</span>
+          </p>
+        </footer>
 
         <aside class="actions" @click.stop>
           <RouterLink :to="`/users/${localVideo.user_id}`" class="avatar">
@@ -605,111 +749,126 @@ onBeforeUnmount(() => {
             <span class="icon">{{ engagement.favorited ? '⭐' : '☆' }}</span>
             <span class="label">{{ formatCount(engagement.favorite_count) }}</span>
           </button>
+
+          <button type="button" class="action-btn" :class="{ active: barrageOpen }" @click="openBarrage">
+            <span class="icon">弹</span>
+            <span class="label">弹幕</span>
+          </button>
         </aside>
 
-        <footer class="meta" @click.stop>
-          <RouterLink :to="`/users/${localVideo.user_id}`" class="author">
-            @{{ localVideo.user_id }}
-          </RouterLink>
-          <h2 class="title">{{ localVideo.title }}</h2>
-          <p v-if="localVideo.tags?.length" class="tags">
-            <span v-for="tag in localVideo.tags" :key="tag" class="tag">#{{ tag }}</span>
-          </p>
-          <p class="desc">{{ localVideo.description }}</p>
-        </footer>
+        <div v-if="barrageOpen" class="barrage-sheet" @click.stop>
+          <input
+            v-model="barrageText"
+            placeholder="输入弹幕..."
+            maxlength="100"
+            @keyup.enter="sendBarrage"
+          />
+          <button type="button" class="btn btn-primary btn-sm" @click="sendBarrage">发送</button>
+          <button type="button" class="icon-btn icon-btn--ghost" aria-label="关闭弹幕" @click="barrageOpen = false">
+            ✕
+          </button>
+        </div>
 
         <div
           v-if="renderPlayer && hasPlayUrls(localVideo.play_urls)"
-          class="player-controls"
+          class="playback-bar"
           @click.stop
         >
-          <div v-if="availableQualities.length" class="ctrl-wrap">
-            <button
-              type="button"
-              class="ctrl-btn"
-              :disabled="!hasPlayUrls(localVideo.play_urls)"
-              @click="showQualityMenu = !showQualityMenu; showSpeedMenu = false; showVolumePanel = false"
-            >
-              {{ qualityLabel(currentQuality) || '清晰度' }}
-            </button>
-            <div v-if="showQualityMenu" class="ctrl-menu">
+          <div v-if="videoDuration > 0" class="progress-track" aria-hidden="true">
+            <div class="progress-fill" :style="{ width: `${progressPercent}%` }" />
+          </div>
+          <div class="playback-bar-inner">
+            <div class="playback-tools">
+              <div class="ctrl-wrap">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  :class="{ highlight: needSoundUnlock || muted }"
+                  aria-label="音量"
+                  :aria-expanded="showVolumePanel"
+                  @click="onVolumeBtnClick"
+                >
+                  {{ muted || volume === 0 ? '🔇' : '🔊' }}
+                </button>
+                <div v-if="showVolumePanel" class="ctrl-menu ctrl-menu--volume">
+                  <button type="button" class="ctrl-menu-item" @click="toggleMute">
+                    {{ muted || volume === 0 ? '开启声音' : '静音' }}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    :value="volume"
+                    class="volume-slider"
+                    @input="onVolumeInput"
+                  />
+                </div>
+              </div>
+
+              <div class="ctrl-wrap">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  aria-label="播放倍速"
+                  :aria-expanded="showSpeedMenu"
+                  @click.stop="showSpeedMenu = !showSpeedMenu; showQualityMenu = false; showVolumePanel = false"
+                >
+                  {{ speedLabel(playbackRate) }}
+                </button>
+                <div v-if="showSpeedMenu" class="ctrl-menu">
+                  <button
+                    v-for="rate in SPEED_OPTIONS"
+                    :key="rate"
+                    type="button"
+                    class="ctrl-menu-item"
+                    :class="{ active: rate === playbackRate }"
+                    @click="setPlaybackRate(rate)"
+                  >
+                    {{ speedLabel(rate) }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="availableQualities.length" class="ctrl-wrap">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  aria-label="清晰度"
+                  :aria-expanded="showQualityMenu"
+                  @click.stop="showQualityMenu = !showQualityMenu; showSpeedMenu = false; showVolumePanel = false"
+                >
+                  {{ qualityLabel(currentQuality) || 'HD' }}
+                </button>
+                <div v-if="showQualityMenu" class="ctrl-menu" role="menu">
+                  <button
+                    v-for="q in availableQualities"
+                    :key="q"
+                    type="button"
+                    class="ctrl-menu-item"
+                    :class="{ active: q === currentQuality }"
+                    @click="switchQuality(q)"
+                  >
+                    {{ qualityLabel(q) }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="playback-tools">
               <button
-                v-for="q in availableQualities"
-                :key="q"
+                v-if="showPiP"
                 type="button"
-                class="ctrl-menu-item"
-                :class="{ active: q === currentQuality }"
-                @click="switchQuality(q)"
+                class="icon-btn"
+                aria-label="画中画"
+                @click="togglePiP"
               >
-                {{ qualityLabel(q) }}
+                ⧉
+              </button>
+              <button type="button" class="icon-btn" aria-label="全屏" @click="toggleFullscreen">
+                ⛶
               </button>
             </div>
-          </div>
-
-          <div class="ctrl-wrap">
-            <button
-              type="button"
-              class="ctrl-btn"
-              :class="{ highlight: needSoundUnlock || muted }"
-              @click="showVolumePanel = !showVolumePanel; showQualityMenu = false; showSpeedMenu = false"
-            >
-              {{ muted || volume === 0 ? '静音' : '音量' }}
-            </button>
-            <div v-if="showVolumePanel" class="ctrl-menu ctrl-menu--volume">
-              <button type="button" class="ctrl-menu-item" @click="toggleMute">
-                {{ muted || volume === 0 ? '开启声音' : '静音' }}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                :value="volume"
-                class="volume-slider"
-                @input="onVolumeInput"
-              />
-            </div>
-          </div>
-
-          <div class="ctrl-wrap">
-            <button
-              type="button"
-              class="ctrl-btn"
-              @click="showSpeedMenu = !showSpeedMenu; showQualityMenu = false; showVolumePanel = false"
-            >
-              {{ speedLabel(playbackRate) }}
-            </button>
-            <div v-if="showSpeedMenu" class="ctrl-menu">
-              <button
-                v-for="rate in SPEED_OPTIONS"
-                :key="rate"
-                type="button"
-                class="ctrl-menu-item"
-                :class="{ active: rate === playbackRate }"
-                @click="setPlaybackRate(rate)"
-              >
-                {{ speedLabel(rate) }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="needSoundUnlock" class="sound-hint" @click.stop="unlockSound">
-          点击开启声音
-        </div>
-
-        <div class="barrage-corner" @click.stop>
-          <button type="button" class="barrage-toggle" @click="openBarrage">
-            {{ barrageOpen ? '收起弹幕' : '发弹幕' }}
-          </button>
-          <div v-if="barrageOpen" class="barrage-form">
-            <input
-              v-model="barrageText"
-              placeholder="输入弹幕..."
-              maxlength="100"
-              @keyup.enter="sendBarrage"
-            />
-            <button type="button" @click="sendBarrage">发送</button>
           </div>
         </div>
       </div>
@@ -749,7 +908,7 @@ onBeforeUnmount(() => {
   display: flex;
   width: 100%;
   height: 100%;
-  background: #000;
+  background: var(--color-surface);
   overflow: hidden;
 }
 
@@ -758,6 +917,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: 100%;
   transition: flex 0.28s ease;
+  cursor: pointer;
 }
 
 .comments-open .stage {
@@ -766,10 +926,15 @@ onBeforeUnmount(() => {
 
 .media-wrap {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
+  margin: 8px;
   overflow: hidden;
-  background: #000;
+  border-radius: var(--radius-md);
+  background: #0f172a;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 40px rgba(15, 23, 42, 0.28);
 }
 
 .video,
@@ -777,6 +942,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
   display: block;
   transition: transform 0.28s ease;
 }
@@ -824,14 +990,134 @@ onBeforeUnmount(() => {
   max-width: 80%;
 }
 
+.status-banner--info {
+  top: auto;
+  bottom: 72px;
+  transform: translateX(-50%);
+  background: rgba(37, 99, 235, 0.72);
+}
+
+.swipe-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  animation: swipe-fade 3.2s ease forwards;
+}
+
+@keyframes swipe-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 .gradient {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 42%;
-  background: rgba(0, 0, 0, 0.35);
+  height: 48%;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
   pointer-events: none;
+}
+
+.progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  z-index: 1;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.12s linear;
+}
+
+.playback-bar {
+  --playback-bar-height: 52px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+}
+
+.playback-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--playback-bar-height);
+  padding: 8px 12px 10px;
+}
+
+.playback-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.playback-bar .icon-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.playback-bar .icon-btn.highlight {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.35);
+}
+
+.playback-bar .icon-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.playback-bar .ctrl-wrap {
+  position: relative;
+}
+
+.playback-bar .ctrl-menu {
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.playback-bar .ctrl-menu-item {
+  color: #e2e8f0;
+}
+
+.playback-bar .ctrl-menu-item:hover,
+.playback-bar .ctrl-menu-item.active {
+  background: rgba(37, 99, 235, 0.35);
+  color: #fff;
 }
 
 .danmaku-layer {
@@ -854,6 +1140,7 @@ onBeforeUnmount(() => {
   line-height: 1.4;
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 1px 2px #000;
+  -webkit-text-stroke: 0.4px rgba(0, 0, 0, 0.5);
   animation: danmaku-fly 9s linear forwards;
   will-change: transform;
 }
@@ -870,12 +1157,12 @@ onBeforeUnmount(() => {
 .actions {
   position: absolute;
   right: 10px;
-  bottom: 110px;
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px) + 16px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
-  z-index: 3;
+  gap: 14px;
+  z-index: 4;
 }
 
 .avatar {
@@ -901,8 +1188,20 @@ onBeforeUnmount(() => {
   background: none;
   color: #fff;
   cursor: pointer;
-  padding: 2px;
+  padding: 6px;
   min-width: 48px;
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.action-btn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .action-btn:disabled {
@@ -926,19 +1225,52 @@ onBeforeUnmount(() => {
 .meta {
   position: absolute;
   left: 0;
-  right: 68px;
-  bottom: 0;
-  padding: 16px 16px 72px;
-  z-index: 2;
+  right: 72px;
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 14px 10px;
+  z-index: 3;
+  pointer-events: none;
 }
 
-.author {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: #f8fafc;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 15px;
+.meta .tag {
+  pointer-events: auto;
+}
+
+.barrage-sheet {
+  position: absolute;
+  left: 12px;
+  right: 72px;
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.barrage-sheet input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 16px;
+}
+
+.barrage-sheet input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.barrage-sheet .btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .title {
@@ -956,7 +1288,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 0 0 6px;
+  margin: 0;
 }
 
 .tag {
@@ -967,50 +1299,8 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-full);
 }
 
-.desc {
-  margin: 0;
-  font-size: 13px;
-  color: #cbd5e1;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.player-controls {
-  position: absolute;
-  left: 12px;
-  bottom: 72px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  z-index: 4;
-}
-
 .ctrl-wrap {
   position: relative;
-}
-
-.ctrl-btn {
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-}
-
-.ctrl-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ctrl-btn.highlight {
-  border-color: #60a5fa;
-  color: #bfdbfe;
 }
 
 .ctrl-menu {
@@ -1019,12 +1309,26 @@ onBeforeUnmount(() => {
   left: 0;
   min-width: 88px;
   padding: 6px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-float);
   display: flex;
   flex-direction: column;
   gap: 4px;
+  transform-origin: bottom left;
+  animation: menu-in 0.18s ease;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .ctrl-menu--volume {
@@ -1035,7 +1339,7 @@ onBeforeUnmount(() => {
 .ctrl-menu-item {
   border: none;
   background: transparent;
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
   text-align: left;
   padding: 6px 8px;
   border-radius: 6px;
@@ -1045,8 +1349,8 @@ onBeforeUnmount(() => {
 
 .ctrl-menu-item:hover,
 .ctrl-menu-item.active {
-  background: rgba(37, 99, 235, 0.35);
-  color: #fff;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .volume-slider {
@@ -1055,77 +1359,14 @@ onBeforeUnmount(() => {
   accent-color: #2563eb;
 }
 
-.sound-hint {
-  position: absolute;
-  left: 12px;
-  bottom: 118px;
-  z-index: 5;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.85);
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.barrage-corner {
-  position: absolute;
-  left: 12px;
-  bottom: 20px;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  max-width: calc(100% - 90px);
-}
-
-.barrage-toggle {
-  padding: 8px 14px;
-  border: none;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #f8fafc;
-  font-size: 13px;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-}
-
-.barrage-form {
-  display: flex;
-  gap: 8px;
-  width: min(320px, 72vw);
-}
-
-.barrage-form input {
-  flex: 1;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(15, 23, 42, 0.85);
-  color: #f8fafc;
-  font-size: 13px;
-}
-
-.barrage-form button {
-  padding: 8px 14px;
-  border: none;
-  border-radius: 999px;
-  background: #0ea5e9;
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 .comment-panel {
   flex: 0 0 28%;
   min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #0f172a;
-  border-left: 1px solid #334155;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
   z-index: 5;
   animation: slide-in 0.28s ease;
 }
@@ -1147,18 +1388,19 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   padding: 14px 12px 10px;
   padding-top: max(14px, env(safe-area-inset-top));
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .comment-head h3 {
   margin: 0;
   font-size: 15px;
+  color: var(--color-text);
 }
 
 .close-btn {
   border: none;
   background: none;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -1179,7 +1421,7 @@ onBeforeUnmount(() => {
 .comment-item strong {
   display: block;
   font-size: 13px;
-  color: #f8fafc;
+  color: var(--color-text);
   margin-bottom: 4px;
 }
 
@@ -1187,14 +1429,14 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
   word-break: break-word;
 }
 
 .comment-empty {
   margin: 24px 0;
   text-align: center;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
@@ -1202,24 +1444,24 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   padding: 10px 12px 16px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--color-border);
 }
 
 .comment-input input {
   flex: 1;
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #475569;
-  background: #1e293b;
-  color: #f8fafc;
-  font-size: 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 16px;
 }
 
 .comment-input button {
   padding: 8px 12px;
   border: none;
-  border-radius: 8px;
-  background: #0ea5e9;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
   color: #fff;
   font-size: 13px;
   cursor: pointer;
@@ -1230,17 +1472,24 @@ onBeforeUnmount(() => {
   left: 50%;
   top: 72px;
   transform: translateX(-50%);
-  z-index: 30;
+  z-index: var(--z-toast);
   padding: 8px 16px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.75);
-  color: #f8fafc;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
   font-size: 13px;
   pointer-events: none;
   white-space: nowrap;
+  box-shadow: var(--shadow-float);
 }
 
 @media (max-width: 640px) {
+  .player-controls {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 100px);
+  }
+
   .comments-open .stage {
     flex: 0 0 62%;
   }

@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import AuthLayout from '../components/AuthLayout.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -41,18 +42,21 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="page-center">
-    <form class="card card-body-lg form" @submit.prevent="handleSubmit">
-      <h1 class="page-title">登录</h1>
-      <p class="page-desc">测试账号：alice / 123456</p>
-
+  <AuthLayout title="登录" subtitle="使用账号密码或 Mock OAuth 进入平台">
+    <form class="auth-form" @submit.prevent="handleSubmit">
       <label class="field">
         用户名
-        <input v-model="form.username" type="text" required />
+        <input v-model="form.username" type="text" placeholder="alice" required autocomplete="username" />
       </label>
       <label class="field">
         密码
-        <input v-model="form.password" type="password" required />
+        <input
+          v-model="form.password"
+          type="password"
+          placeholder="123456"
+          required
+          autocomplete="current-password"
+        />
       </label>
 
       <p v-if="error" class="text-error">{{ error }}</p>
@@ -66,14 +70,15 @@ async function handleSubmit() {
       <p class="foot text-muted">
         还没有账号？
         <RouterLink to="/register">去注册</RouterLink>
+        · 测试账号 alice / 123456
       </p>
     </form>
-  </div>
+  </AuthLayout>
 </template>
 
 <style scoped>
-.form {
-  width: min(420px, 100%);
+.auth-form {
+  margin: 0;
 }
 
 .foot {

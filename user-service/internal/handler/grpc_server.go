@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"short-video-platform/gen/userpb"
+	"short-video-platform/pkg/auth"
 	"short-video-platform/user-service/internal/model"
 	"short-video-platform/user-service/internal/repository"
 	"short-video-platform/user-service/internal/service"
@@ -77,6 +78,10 @@ func (s *UserGRPCServer) GetUserVideos(ctx context.Context, req *userpb.GetUserV
 func (s *UserGRPCServer) UpdateAvatar(ctx context.Context, req *userpb.UpdateAvatarRequest) (*userpb.UpdateAvatarResponse, error) {
 	if req.GetUserId() == "" || strings.TrimSpace(req.GetAvatarUrl()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id and avatar_url required")
+	}
+	callerID := auth.UserIDFromContext(ctx)
+	if callerID == "" || callerID != req.GetUserId() {
+		return nil, status.Error(codes.PermissionDenied, "can only update own avatar")
 	}
 	u, err := s.svc.UpdateAvatar(ctx, req.GetUserId(), req.GetAvatarUrl())
 	if err != nil {

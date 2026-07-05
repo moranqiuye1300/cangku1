@@ -47,6 +47,7 @@ func (h consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, 
 		<-h.sem
 		if err != nil {
 			log.Printf("transcode failed: %v", err)
+			continue
 		}
 		session.MarkMessage(msg, "")
 	}
@@ -72,7 +73,7 @@ func (w *Worker) handleMessage(ctx context.Context, payload []byte) error {
 
 	_, err = w.videoClient.UpdateTranscodeResult(ctx, &videopb.UpdateTranscodeResultRequest{
 		VideoId:  task.VideoID,
-		Status:   "ready",
+		Status:   "pending_final_review",
 		Duration: result.Duration,
 		CoverUrl: result.CoverURL,
 		PlayUrls: result.PlayURLs,

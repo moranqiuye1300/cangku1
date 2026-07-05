@@ -26,12 +26,9 @@ func BearerFromContext(ctx context.Context) string {
 }
 
 func OutgoingContext(ctx context.Context) context.Context {
-	md := metadata.MD{}
+	md := metadata.Pairs(HeaderInternalKey, InternalKey())
 	if token := BearerFromContext(ctx); token != "" {
 		md.Set(HeaderAuthorization, "Bearer "+token)
-	}
-	if len(md) == 0 {
-		return ctx
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }

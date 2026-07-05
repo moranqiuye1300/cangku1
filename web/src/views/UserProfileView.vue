@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, RouterLink } from 'vue-router'
 import VideoCard from '../components/VideoCard.vue'
 import UserAvatar from '../components/UserAvatar.vue'
+import PageTabs from '../components/PageTabs.vue'
+import VideoGrid from '../components/VideoGrid.vue'
+import UiState from '../components/UiState.vue'
 import {
   fetchUser,
   fetchUserVideos,
@@ -34,13 +37,6 @@ const tabs = computed(() => {
     { key: 'likes', label: '我点赞的' },
     { key: 'favorites', label: '我收藏的' }
   ]
-})
-
-const sectionTitle = computed(() => {
-  if (!isSelf.value) return 'Ta 的视频'
-  if (activeTab.value === 'likes') return '我点赞的视频'
-  if (activeTab.value === 'favorites') return '我收藏的视频'
-  return '我上传的视频'
 })
 
 const emptyText = computed(() => {
@@ -81,10 +77,20 @@ async function loadProfile() {
   }
 }
 
-function switchTab(key) {
-  if (activeTab.value === key) return
-  activeTab.value = key
-  loadProfile()
+async function reloadVideos() {
+  loading.value = true
+  error.value = ''
+  try {
+    const videoRes = await loadVideos()
+    videos.value = videoRes.data.videos || []
+    total.value = videoRes.data.total || 0
+  } catch (e) {
+    error.value = e.message
+    videos.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
 }
 
 function pickAvatar() {
@@ -119,16 +125,23 @@ async function onAvatarChange(e) {
 }
 
 onMounted(loadProfile)
+
 watch(() => route.params.id, () => {
   activeTab.value = 'uploads'
   loadProfile()
+})
+
+watch(activeTab, (val, oldVal) => {
+  if (oldVal && val !== oldVal && user.value) {
+    reloadVideos()
+  }
 })
 </script>
 
 <template>
   <div class="page-wrap">
-    <section v-if="loading && !user" class="card card-body text-muted">加载中...</section>
-    <section v-else-if="error && !user" class="card card-body text-error">{{ error }}</section>
+    <UiState v-if="loading && !user" type="loading" message="加载中..." />
+    <UiState v-else-if="error && !user" type="empty" :message="error" />
     <template v-else-if="user">
       <section class="profile card card-body">
         <div class="avatar-wrap">
@@ -150,37 +163,37 @@ watch(() => route.params.id, () => {
             @change="onAvatarChange"
           />
         </div>
-        <div>
+        <div class="profile-meta">
           <h1>{{ user.nickname || user.username }}</h1>
           <p>@{{ user.username }} · 加入于 {{ formatDate(user.created_at) }}</p>
-          <p v-if="isSelf" class="badge badge-blue">我的主页</p>
+          <div class="stats-row">
+            <div class="stat-item">
+              <strong>{{ total }}</strong>
+              <span>{{ isSelf && activeTab === 'uploads' ? '作品' : '视频' }}</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      <nav v-if="tabs.length" class="tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          type="button"
-          class="tab"
-          :class="{ active: activeTab === tab.key }"
-          @click="switchTab(tab.key)"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
+      <PageTabs v-if="tabs.length" v-model="activeTab" :tabs="tabs" />
 
-      <section class="section-head">
-        <h2>{{ sectionTitle }}</h2>
-        <span>{{ total }} 个</span>
-      </section>
-
-      <section v-if="loading" class="card card-body text-muted">加载中...</section>
-      <section v-else-if="error" class="card card-body text-error">{{ error }}</section>
-      <div v-else-if="videos.length" class="grid">
-        <VideoCard v-for="item in videos" :key="item.id" :video="item" />
-      </div>
-      <div v-else class="card card-body text-muted">{{ emptyText }}</div>
+      <UiState v-if="loading" type="loading" message="加载中..." />
+      <UiState v-else-if="error" type="empty" :message="error" retry @retry="reloadVideos" />
+      <UiState
+        v-else-if="!videos.length && isSelf && activeTab === 'uploads'"
+        message="你还没有发布视频，上传后将进入审核流程"
+      >
+        <RouterLink to="/upload" class="btn btn-primary">去投稿</RouterLink>
+      </UiState>
+      <VideoGrid v-else-if="!videos.length" :empty="true" :empty-message="emptyText" />
+      <VideoGrid v-else>
+        <VideoCard
+          v-for="item in videos"
+          :key="item.id"
+          :video="item"
+          :show-status="isSelf && activeTab === 'uploads'"
+        />
+      </VideoGrid>
     </template>
   </div>
 </template>
@@ -224,60 +237,19 @@ h1 {
   font-size: 22px;
 }
 
-.profile p {
+.profile-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-meta h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.profile-meta p {
   margin: 0;
   color: var(--color-text-secondary);
 }
 
-.badge-blue {
-  margin-top: 8px;
-}
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
-}
-
-.tab {
-  padding: 8px 14px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.tab.active {
-  background: var(--color-primary-soft);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  font-weight: 500;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.section-head h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.section-head span {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
-}
 </style>

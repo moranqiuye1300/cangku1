@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
 
 	"short-video-platform/api-gateway/internal/response"
 	"short-video-platform/gen/userpb"
@@ -169,10 +171,47 @@ func (h *Handler) AdminListAuditLogs(c *gin.Context) {
 }
 
 func (h *Handler) ReviewerListVideos(c *gin.Context) {
-	h.AdminListVideos(c)
+	stage := c.DefaultQuery("stage", "source")
+	page, pageSize := pageQuery(c)
+	resp, err := h.videoClient.ReviewerListPending(h.ctx(c), &videopb.ReviewerListPendingRequest{
+		Stage:    stage,
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		h.writeGRPCError(c, err)
+		return
+	}
+	response.OK(c, gin.H{"videos": resp.GetVideos(), "total": resp.GetTotal()})
 }
 
-func (h *Handler) ReviewerDeleteVideo(c *gin.Context) {
+func (h *Handler) reviewerAction(
+	c *gin.Context,
+	call func(context.Context, *videopb.ReviewerReviewActionRequest, ...grpc.CallOption) (*videopb.ReviewerReviewActionResponse, error),
+) {
+	var req deleteVideoReq
+	_ = c.ShouldBindJSON(&req)
+	videoID := c.Param("id")
+	resp, err := call(h.ctx(c), &videopb.ReviewerReviewActionRequest{
+		VideoId:          videoID,
+		OperatorId:       c.GetString("user_id"),
+		OperatorUsername: c.GetString("username"),
+		Reason:           strings.TrimSpace(req.Reason),
+		Ip:               c.ClientIP(),
+		UserAgent:        c.GetHeader("User-Agent"),
+	})
+	if err != nil {
+		h.writeGRPCError(c, err)
+		return
+	}
+	response.OK(c, gin.H{"video": resp.GetVideo()})
+}
+
+func (h *Handler) ReviewerApproveSource(c *gin.Context) {
+	h.reviewerAction(c, h.videoClient.ReviewerApproveSource)
+}
+
+func (h *Handler) ReviewerRejectSource(c *gin.Context) {
 	var req deleteVideoReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40001, err.Error())
@@ -182,5 +221,26 @@ func (h *Handler) ReviewerDeleteVideo(c *gin.Context) {
 		response.Fail(c, 400, 40001, "reason required for review rejection")
 		return
 	}
-	h.AdminDeleteVideo(c)
+	h.reviewerAction(c, h.videoClient.ReviewerRejectSource)
+}
+
+func (h *Handler) ReviewerApprovePublish(c *gin.Context) {
+	h.reviewerAction(c, h.videoClient.ReviewerApprovePublish)
+}
+
+func (h *Handler) ReviewerRejectPublish(c *gin.Context) {
+	var req deleteVideoReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40001, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		response.Fail(c, 400, 40001, "reason required for review rejection")
+		return
+	}
+	h.reviewerAction(c, h.videoClient.ReviewerRejectPublish)
+}
+
+func (h *Handler) ReviewerDeleteVideo(c *gin.Context) {
+	h.ReviewerRejectPublish(c)
 }

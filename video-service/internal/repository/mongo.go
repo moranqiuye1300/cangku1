@@ -3,6 +3,9 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -38,7 +41,40 @@ func deletedFilter() bson.M {
 }
 
 func (r *MongoRepository) List(ctx context.Context, page, pageSize int) ([]model.Video, int, error) {
-	filter := activeFilter(bson.M{})
+	return r.ListPublished(ctx, page, pageSize)
+}
+
+func (r *MongoRepository) ListPublished(ctx context.Context, page, pageSize int) ([]model.Video, int, error) {
+	filter := activeFilter(bson.M{"status": model.StatusReady})
+	total64, err := r.col.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := int(total64)
+
+	skip := int64((page - 1) * pageSize)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(pageSize))
+
+	cur, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cur.Close(ctx)
+
+	return r.cursorToVideos(ctx, cur, total)
+}
+
+func (r *MongoRepository) ListByStatus(ctx context.Context, status string, page, pageSize int) ([]model.Video, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	filter := activeFilter(bson.M{"status": status})
 	total64, err := r.col.CountDocuments(ctx, filter)
 	if err != nil {
 		return nil, 0, err
@@ -62,6 +98,29 @@ func (r *MongoRepository) List(ctx context.Context, page, pageSize int) ([]model
 
 func (r *MongoRepository) ListByUser(ctx context.Context, userID string, page, pageSize int) ([]model.Video, int, error) {
 	filter := activeFilter(bson.M{"user_id": userID})
+	total64, err := r.col.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := int(total64)
+
+	skip := int64((page - 1) * pageSize)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(pageSize))
+
+	cur, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cur.Close(ctx)
+
+	return r.cursorToVideos(ctx, cur, total)
+}
+
+func (r *MongoRepository) ListByUserPublished(ctx context.Context, userID string, page, pageSize int) ([]model.Video, int, error) {
+	filter := activeFilter(bson.M{"user_id": userID, "status": model.StatusReady})
 	total64, err := r.col.CountDocuments(ctx, filter)
 	if err != nil {
 		return nil, 0, err
@@ -111,6 +170,40 @@ func (r *MongoRepository) Count(ctx context.Context) (int64, error) {
 	return r.col.CountDocuments(ctx, activeFilter(bson.M{}))
 }
 
+func parseVideoNum(id string) int {
+	n, err := strconv.Atoi(strings.TrimPrefix(id, "v"))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// NextVideoID returns the next unused vN id based on all documents (including soft-deleted).
+func (r *MongoRepository) NextVideoID(ctx context.Context) (string, error) {
+	cur, err := r.col.Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"video_id": 1}))
+	if err != nil {
+		return "", err
+	}
+	defer cur.Close(ctx)
+
+	maxNum := 0
+	for cur.Next(ctx) {
+		var doc struct {
+			VideoID string `bson:"video_id"`
+		}
+		if err := cur.Decode(&doc); err != nil {
+			return "", err
+		}
+		if n := parseVideoNum(doc.VideoID); n > maxNum {
+			maxNum = n
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("v%d", maxNum+1), nil
+}
+
 func (r *MongoRepository) InsertMany(ctx context.Context, videos []model.Video) error {
 	if len(videos) == 0 {
 		return nil
@@ -138,6 +231,20 @@ func (r *MongoRepository) UpdateStatus(ctx context.Context, videoID, status stri
 	}
 	if res.MatchedCount == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *MongoRepository) UpdateStatusIf(ctx context.Context, videoID, fromStatus, toStatus string) error {
+	res, err := r.col.UpdateOne(ctx,
+		activeFilter(bson.M{"video_id": videoID, "status": fromStatus}),
+		bson.M{"$set": bson.M{"status": toStatus}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrStatusConflict
 	}
 	return nil
 }

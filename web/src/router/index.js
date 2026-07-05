@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/auth'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'feed', component: FeedView, meta: { immersive: true } },
+    { path: '/', name: 'feed', component: FeedView },
     { path: '/discover', name: 'discover', component: HomeView },
     {
       path: '/videos/:id',

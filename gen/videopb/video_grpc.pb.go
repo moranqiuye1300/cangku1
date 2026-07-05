@@ -41,6 +41,11 @@ const (
 	VideoService_AdminPermanentDeleteVideo_FullMethodName = "/video.v1.VideoService/AdminPermanentDeleteVideo"
 	VideoService_ListRecycleBin_FullMethodName            = "/video.v1.VideoService/ListRecycleBin"
 	VideoService_ListAuditLogs_FullMethodName             = "/video.v1.VideoService/ListAuditLogs"
+	VideoService_ReviewerListPending_FullMethodName       = "/video.v1.VideoService/ReviewerListPending"
+	VideoService_ReviewerApproveSource_FullMethodName     = "/video.v1.VideoService/ReviewerApproveSource"
+	VideoService_ReviewerRejectSource_FullMethodName      = "/video.v1.VideoService/ReviewerRejectSource"
+	VideoService_ReviewerApprovePublish_FullMethodName    = "/video.v1.VideoService/ReviewerApprovePublish"
+	VideoService_ReviewerRejectPublish_FullMethodName     = "/video.v1.VideoService/ReviewerRejectPublish"
 )
 
 // VideoServiceClient is the client API for VideoService service.
@@ -69,6 +74,11 @@ type VideoServiceClient interface {
 	AdminPermanentDeleteVideo(ctx context.Context, in *AdminPermanentDeleteVideoRequest, opts ...grpc.CallOption) (*AdminPermanentDeleteVideoResponse, error)
 	ListRecycleBin(ctx context.Context, in *ListRecycleBinRequest, opts ...grpc.CallOption) (*ListRecycleBinResponse, error)
 	ListAuditLogs(ctx context.Context, in *ListAuditLogsRequest, opts ...grpc.CallOption) (*ListAuditLogsResponse, error)
+	ReviewerListPending(ctx context.Context, in *ReviewerListPendingRequest, opts ...grpc.CallOption) (*ReviewerListPendingResponse, error)
+	ReviewerApproveSource(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error)
+	ReviewerRejectSource(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error)
+	ReviewerApprovePublish(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error)
+	ReviewerRejectPublish(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error)
 }
 
 type videoServiceClient struct {
@@ -299,6 +309,56 @@ func (c *videoServiceClient) ListAuditLogs(ctx context.Context, in *ListAuditLog
 	return out, nil
 }
 
+func (c *videoServiceClient) ReviewerListPending(ctx context.Context, in *ReviewerListPendingRequest, opts ...grpc.CallOption) (*ReviewerListPendingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewerListPendingResponse)
+	err := c.cc.Invoke(ctx, VideoService_ReviewerListPending_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *videoServiceClient) ReviewerApproveSource(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewerReviewActionResponse)
+	err := c.cc.Invoke(ctx, VideoService_ReviewerApproveSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *videoServiceClient) ReviewerRejectSource(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewerReviewActionResponse)
+	err := c.cc.Invoke(ctx, VideoService_ReviewerRejectSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *videoServiceClient) ReviewerApprovePublish(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewerReviewActionResponse)
+	err := c.cc.Invoke(ctx, VideoService_ReviewerApprovePublish_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *videoServiceClient) ReviewerRejectPublish(ctx context.Context, in *ReviewerReviewActionRequest, opts ...grpc.CallOption) (*ReviewerReviewActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewerReviewActionResponse)
+	err := c.cc.Invoke(ctx, VideoService_ReviewerRejectPublish_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VideoServiceServer is the server API for VideoService service.
 // All implementations must embed UnimplementedVideoServiceServer
 // for forward compatibility.
@@ -325,6 +385,11 @@ type VideoServiceServer interface {
 	AdminPermanentDeleteVideo(context.Context, *AdminPermanentDeleteVideoRequest) (*AdminPermanentDeleteVideoResponse, error)
 	ListRecycleBin(context.Context, *ListRecycleBinRequest) (*ListRecycleBinResponse, error)
 	ListAuditLogs(context.Context, *ListAuditLogsRequest) (*ListAuditLogsResponse, error)
+	ReviewerListPending(context.Context, *ReviewerListPendingRequest) (*ReviewerListPendingResponse, error)
+	ReviewerApproveSource(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error)
+	ReviewerRejectSource(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error)
+	ReviewerApprovePublish(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error)
+	ReviewerRejectPublish(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error)
 	mustEmbedUnimplementedVideoServiceServer()
 }
 
@@ -400,6 +465,21 @@ func (UnimplementedVideoServiceServer) ListRecycleBin(context.Context, *ListRecy
 }
 func (UnimplementedVideoServiceServer) ListAuditLogs(context.Context, *ListAuditLogsRequest) (*ListAuditLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAuditLogs not implemented")
+}
+func (UnimplementedVideoServiceServer) ReviewerListPending(context.Context, *ReviewerListPendingRequest) (*ReviewerListPendingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewerListPending not implemented")
+}
+func (UnimplementedVideoServiceServer) ReviewerApproveSource(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewerApproveSource not implemented")
+}
+func (UnimplementedVideoServiceServer) ReviewerRejectSource(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewerRejectSource not implemented")
+}
+func (UnimplementedVideoServiceServer) ReviewerApprovePublish(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewerApprovePublish not implemented")
+}
+func (UnimplementedVideoServiceServer) ReviewerRejectPublish(context.Context, *ReviewerReviewActionRequest) (*ReviewerReviewActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewerRejectPublish not implemented")
 }
 func (UnimplementedVideoServiceServer) mustEmbedUnimplementedVideoServiceServer() {}
 func (UnimplementedVideoServiceServer) testEmbeddedByValue()                      {}
@@ -818,6 +898,96 @@ func _VideoService_ListAuditLogs_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VideoService_ReviewerListPending_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewerListPendingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoServiceServer).ReviewerListPending(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoService_ReviewerListPending_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoServiceServer).ReviewerListPending(ctx, req.(*ReviewerListPendingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VideoService_ReviewerApproveSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewerReviewActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoServiceServer).ReviewerApproveSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoService_ReviewerApproveSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoServiceServer).ReviewerApproveSource(ctx, req.(*ReviewerReviewActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VideoService_ReviewerRejectSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewerReviewActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoServiceServer).ReviewerRejectSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoService_ReviewerRejectSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoServiceServer).ReviewerRejectSource(ctx, req.(*ReviewerReviewActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VideoService_ReviewerApprovePublish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewerReviewActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoServiceServer).ReviewerApprovePublish(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoService_ReviewerApprovePublish_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoServiceServer).ReviewerApprovePublish(ctx, req.(*ReviewerReviewActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VideoService_ReviewerRejectPublish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewerReviewActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoServiceServer).ReviewerRejectPublish(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoService_ReviewerRejectPublish_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoServiceServer).ReviewerRejectPublish(ctx, req.(*ReviewerReviewActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VideoService_ServiceDesc is the grpc.ServiceDesc for VideoService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -912,6 +1082,26 @@ var VideoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAuditLogs",
 			Handler:    _VideoService_ListAuditLogs_Handler,
+		},
+		{
+			MethodName: "ReviewerListPending",
+			Handler:    _VideoService_ReviewerListPending_Handler,
+		},
+		{
+			MethodName: "ReviewerApproveSource",
+			Handler:    _VideoService_ReviewerApproveSource_Handler,
+		},
+		{
+			MethodName: "ReviewerRejectSource",
+			Handler:    _VideoService_ReviewerRejectSource_Handler,
+		},
+		{
+			MethodName: "ReviewerApprovePublish",
+			Handler:    _VideoService_ReviewerApprovePublish_Handler,
+		},
+		{
+			MethodName: "ReviewerRejectPublish",
+			Handler:    _VideoService_ReviewerRejectPublish_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

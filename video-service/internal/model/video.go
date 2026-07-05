@@ -1,10 +1,12 @@
 package model
 
 const (
-	StatusPending     = "pending"
-	StatusTranscoding = "transcoding"
-	StatusReady       = "ready"
-	StatusFailed      = "failed"
+	StatusPending           = "pending"
+	StatusPendingSourceReview = "pending_source_review"
+	StatusPendingFinalReview  = "pending_final_review"
+	StatusTranscoding       = "transcoding"
+	StatusReady             = "ready"
+	StatusFailed            = "failed"
 
 	RecycleBinDays = 30
 )

@@ -11,6 +11,19 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     envDir: projectRoot,
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/hls.js')) return 'hls'
+            if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router') ||
+                id.includes('node_modules/pinia') || id.includes('node_modules/axios')) {
+              return 'vendor'
+            }
+          }
+        }
+      }
+    },
     server: {
       port: Number(env.VITE_DEV_PORT || 5173),
       proxy: {

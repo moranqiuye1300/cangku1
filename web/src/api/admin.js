@@ -40,6 +40,26 @@ export function reviewerListVideos(params) {
   return request.get('/reviewer/videos', { params })
 }
 
+export function reviewerListPending(stage, params = {}) {
+  return request.get('/reviewer/videos', { params: { stage, ...params } })
+}
+
+export function approveSource(id) {
+  return request.post(`/reviewer/videos/${id}/approve-source`)
+}
+
+export function rejectSource(id, reason) {
+  return request.post(`/reviewer/videos/${id}/reject-source`, { reason })
+}
+
+export function approvePublish(id) {
+  return request.post(`/reviewer/videos/${id}/approve-publish`)
+}
+
+export function rejectPublish(id, reason) {
+  return request.post(`/reviewer/videos/${id}/reject-publish`, { reason })
+}
+
 export function reviewerRejectVideo(id, reason) {
   return request.post(`/reviewer/videos/${id}/reject`, { reason })
 }

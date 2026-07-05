@@ -1,14 +1,19 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import VideoCard from '../components/VideoCard.vue'
+import PageSectionHead from '../components/PageSectionHead.vue'
+import VideoGrid from '../components/VideoGrid.vue'
+import UiState from '../components/UiState.vue'
 import { fetchVideos, searchVideos } from '../api/video'
-import { fetchHealth } from '../api/health'
+import { throttle } from '../utils/throttle'
+
+defineOptions({ name: 'HomeView' })
 
 const videos = ref([])
 const total = ref(0)
 const loading = ref(true)
 const error = ref('')
-const backendOk = ref(false)
 const keyword = ref('')
 const searching = ref(false)
 
@@ -49,105 +54,85 @@ async function doSearch() {
   }
 }
 
-async function checkBackend() {
-  try {
-    await fetchHealth()
-    backendOk.value = true
-  } catch {
-    backendOk.value = false
-  }
+const debouncedSearch = throttle(() => {
+  if (keyword.value.trim()) doSearch()
+}, 400)
+
+function clearSearch() {
+  keyword.value = ''
+  loadVideos()
 }
 
-onMounted(async () => {
-  await Promise.all([checkBackend(), loadVideos()])
+watch(keyword, (val) => {
+  if (!val.trim() && searching.value) {
+    loadVideos()
+  }
 })
+
+onMounted(loadVideos)
 </script>
 
 <template>
   <div class="page-wrap">
-    <section class="hero card card-body">
-      <div>
-        <span class="badge badge-blue">发现</span>
-        <h1 class="page-title">搜索与浏览</h1>
-        <p class="page-desc">网格浏览视频，支持关键词搜索，点击进入推荐流观看</p>
-      </div>
-      <span class="badge" :class="backendOk ? 'badge-green' : 'badge-warn'">
-        后端 {{ backendOk ? '已连接' : '未连接' }}
-      </span>
+    <section class="page-intro">
+      <h1>发现精彩视频</h1>
+      <p>浏览已发布的作品，搜索你感兴趣的主题，点击进入推荐流观看完整内容。</p>
+      <p v-if="!loading && !searching" class="page-intro-meta">共 {{ total }} 个已发布视频</p>
     </section>
 
-    <section class="search-bar card card-body">
-      <input
-        v-model="keyword"
-        class="input"
-        type="search"
-        placeholder="搜索标题或简介，如：Go、Gin、gRPC"
-        @keyup.enter="doSearch"
-      />
+    <section class="search-toolbar card card-body">
+      <div class="search-input-wrap">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input
+          v-model="keyword"
+          class="input"
+          type="search"
+          placeholder="搜索标题或简介"
+          @keyup.enter="doSearch"
+          @input="debouncedSearch"
+        />
+        <button
+          v-if="keyword"
+          type="button"
+          class="search-clear"
+          aria-label="清除搜索"
+          @click="clearSearch"
+        >
+          ✕
+        </button>
+      </div>
       <button type="button" class="btn btn-primary" @click="doSearch">搜索</button>
-      <button type="button" class="btn btn-ghost" @click="keyword = ''; loadVideos()">重置</button>
     </section>
 
-    <section v-if="loading" class="hint card card-body text-muted">加载视频中...</section>
-    <section v-else-if="error" class="hint card card-body">
-      <p class="text-error">{{ error }}</p>
-      <button type="button" class="btn btn-primary" @click="searching ? doSearch() : loadVideos()">重试</button>
+    <section v-if="loading" class="skeleton-grid" aria-busy="true">
+      <div v-for="n in 6" :key="n" class="skeleton-card card">
+        <div class="skeleton skeleton-cover" />
+        <div class="skeleton skeleton-line" />
+        <div class="skeleton skeleton-line short" />
+      </div>
     </section>
+
+    <UiState
+      v-else-if="error"
+      type="empty"
+      :message="error"
+      retry
+      @retry="searching ? doSearch() : loadVideos()"
+    />
+
     <section v-else>
-      <div class="toolbar">
-        <span v-if="searching">搜索「{{ keyword }}」共 {{ total }} 个结果</span>
-        <span v-else>共 {{ total }} 个视频</span>
-      </div>
-      <div v-if="videos.length" class="grid">
+      <PageSectionHead
+        v-if="searching"
+        :title="`搜索「${keyword}」`"
+        :count="total"
+      />
+      <VideoGrid v-if="videos.length">
         <VideoCard v-for="item in videos" :key="item.id" :video="item" />
-      </div>
-      <div v-else class="hint card card-body text-muted">暂无视频</div>
+      </VideoGrid>
+      <UiState v-else :show-illustration="true" message="暂无匹配视频，试试其他关键词">
+        <RouterLink to="/" class="btn btn-ghost">去推荐看看</RouterLink>
+        <RouterLink to="/upload" class="btn btn-primary">上传视频</RouterLink>
+      </UiState>
     </section>
   </div>
 </template>
-
-<style scoped>
-.hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.hero .badge-blue {
-  margin-bottom: 10px;
-}
-
-.search-bar {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  align-items: center;
-}
-
-.search-bar .input {
-  flex: 1;
-  margin: 0;
-}
-
-.toolbar {
-  margin-bottom: 16px;
-  color: var(--color-text-secondary);
-  font-size: 14px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
-}
-
-.hint {
-  text-align: center;
-}
-
-.hint .btn {
-  margin-top: 12px;
-}
-</style>

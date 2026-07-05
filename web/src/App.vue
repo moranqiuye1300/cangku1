@@ -1,17 +1,24 @@
 <script setup>
-import { computed } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 
-const route = useRoute()
-const showHeader = computed(() => !route.meta.hidden && !route.meta.immersive)
+function routeKey(r) {
+  if (r.name === 'feed' || r.name === 'discover') {
+    return String(r.name)
+  }
+  return r.fullPath
+}
 </script>
 
 <template>
   <div class="app-shell">
-    <AppHeader v-if="showHeader" />
-    <main class="app-main" :class="{ 'app-main--full': route.meta.hidden || route.meta.immersive }">
-      <RouterView />
+    <AppHeader v-if="!$route.meta.hidden" />
+    <main class="app-main" :class="{ 'app-main--full': $route.meta.hidden }">
+      <RouterView v-slot="{ Component, route: r }">
+        <KeepAlive include="FeedView,HomeView">
+          <component :is="Component" :key="routeKey(r)" />
+        </KeepAlive>
+      </RouterView>
     </main>
   </div>
 </template>

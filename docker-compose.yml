@@ -193,7 +193,7 @@ services:
       MEDIA_ROOT: /data/media
       MEDIA_PUBLIC_URL: /media
       TRANSCODE_CONCURRENCY: "2"
-      AI_SERVICE_URL: http://ai-service:8000
+      AI_SERVICE_URL: http://ai-service:8090
       INTERNAL_GRPC_KEY: ${INTERNAL_GRPC_KEY:-svp-internal-dev-key}
       SVP_SKIP_DOTENV: "1"
     volumes:
@@ -225,7 +225,7 @@ services:
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-100}
       REDIS_ADDR: redis:6379
       AI_SERVICE_URL: http://ai-service:8090
-      OBJECT_STORE: ${OBJECT_STORE:-local}
+      OBJECT_STORE: ${OBJECT_STORE:-minio}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin123
@@ -247,13 +247,26 @@ services:
     restart: unless-stopped
 
   ai-service:
-    build: ./ai-service
+    build:
+      context: ./ai-service
+      args:
+        HF_MODEL_WHISPER: ${HF_MODEL_WHISPER:-}
+        HF_TOKEN: ${HF_TOKEN:-}
     container_name: svp-ai-service
     environment:
       AI_GATEWAY_URL: http://api-gateway:8080
+      ALIYUN_API_URL: ${ALIYUN_API_URL:-}
+      ALIYUN_API_KEY: ${ALIYUN_API_KEY:-}
+      ALIYUN_API_KEY_HEADER: ${ALIYUN_API_KEY_HEADER:-Authorization}
     depends_on:
       api-gateway:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - svp-net
     restart: unless-stopped

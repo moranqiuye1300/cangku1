@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 
 	"short-video-platform/gen/userpb"
+	"short-video-platform/pkg/auth"
 	"short-video-platform/user-service/internal/config"
 	"short-video-platform/user-service/internal/database"
 	"short-video-platform/user-service/internal/grpcclient"
@@ -47,7 +48,7 @@ func main() {
 	}
 
 	svc := service.NewUserService(repo, videoClient)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnaryInterceptor(auth.UserUnaryServerInterceptor(auth.DefaultUserAuthRules())))
 	userpb.RegisterUserServiceServer(srv, handler.NewUserGRPCServer(svc))
 
 	log.Printf("user-service listening on %s (mysql + video %s)", addr, videoAddr)

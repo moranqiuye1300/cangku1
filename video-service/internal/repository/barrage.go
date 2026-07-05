@@ -21,22 +21,37 @@ func NewBarrageRepository(db *mongo.Database) *BarrageRepository {
 	return &BarrageRepository{col: db.Collection("barrages")}
 }
 
-func (r *BarrageRepository) ListByVideo(ctx context.Context, videoID string) ([]model.Barrage, error) {
-	opts := options.Find().SetSort(bson.D{{Key: "time_ms", Value: 1}})
-	cur, err := r.col.Find(ctx, bson.M{"video_id": videoID}, opts)
+func (r *BarrageRepository) ListByVideo(ctx context.Context, videoID string, page, pageSize int) ([]model.Barrage, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 100
+	}
+	filter := bson.M{"video_id": videoID}
+	total64, err := r.col.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	skip := int64((page - 1) * pageSize)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "time_ms", Value: 1}}).
+		SetSkip(skip).
+		SetLimit(int64(pageSize))
+	cur, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer cur.Close(ctx)
 	list := make([]model.Barrage, 0)
 	for cur.Next(ctx) {
 		var doc model.BarrageDoc
 		if err := cur.Decode(&doc); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		list = append(list, *model.DocToBarrage(&doc))
 	}
-	return list, cur.Err()
+	return list, int(total64), cur.Err()
 }
 
 func (r *BarrageRepository) Create(ctx context.Context, b *model.Barrage) error {

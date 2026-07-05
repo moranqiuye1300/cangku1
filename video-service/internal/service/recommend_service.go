@@ -23,42 +23,46 @@ func (s *VideoService) RecommendFeed(ctx context.Context, viewerUserID string, p
 	}
 
 	personalized := false
-	candidates, err := s.repo.ListReadyActive(ctx, 500)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	if len(candidates) == 0 {
-		list, total, err := s.List(ctx, page, pageSize)
-		return list, total, false, err
-	}
-
-	var ranked []model.Video
 	if viewerUserID != "" && s.prefRepo != nil {
 		weights, err := s.prefRepo.GetWeights(ctx, viewerUserID)
 		if err != nil {
 			return nil, 0, false, err
 		}
 		if len(weights) > 0 {
+			poolSize := page * pageSize * 3
+			if poolSize < 30 {
+				poolSize = 30
+			}
+			if poolSize > 100 {
+				poolSize = 100
+			}
+			candidates, err := s.repo.ListReadyActive(ctx, poolSize)
+			if err != nil {
+				return nil, 0, false, err
+			}
+			if len(candidates) == 0 {
+				list, total, err := s.List(ctx, page, pageSize)
+				return list, total, false, err
+			}
 			personalized = true
-			ranked = rankByPreference(candidates, weights)
+			ranked := rankByPreference(candidates, weights)
+			total := len(ranked)
+			start := (page - 1) * pageSize
+			if start >= total {
+				return []model.Video{}, total, true, nil
+			}
+			end := start + pageSize
+			if end > total {
+				end = total
+			}
+			out := make([]model.Video, end-start)
+			copy(out, ranked[start:end])
+			return out, total, true, nil
 		}
 	}
-	if !personalized {
-		ranked = candidates
-	}
 
-	total := len(ranked)
-	start := (page - 1) * pageSize
-	if start >= total {
-		return []model.Video{}, total, personalized, nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
-	out := make([]model.Video, end-start)
-	copy(out, ranked[start:end])
-	return out, total, personalized, nil
+	list, total, err := s.List(ctx, page, pageSize)
+	return list, total, personalized, err
 }
 
 func rankByPreference(videos []model.Video, weights map[string]float64) []model.Video {

@@ -3,7 +3,6 @@ package router
 import (
 	"short-video-platform/api-gateway/internal/handler"
 	"short-video-platform/api-gateway/internal/middleware"
-	"short-video-platform/api-gateway/internal/storage"
 	"short-video-platform/gen/userpb"
 	"short-video-platform/gen/videopb"
 	"short-video-platform/pkg/auth"
@@ -21,11 +20,14 @@ func Setup(opts Options) *gin.Engine {
 	r.MaxMultipartMemory = 64 << 20
 	h := handler.New(opts.UserClient, opts.VideoClient)
 
-	// Docker 下 /media 由 frontend Nginx 直读 media_data；本地直连 :8080 时仍可用 Gin 静态目录
-	r.Static("/media", storage.MediaRoot())
-
 	r.GET("/api/health", h.Health)
 	r.GET("/api/v1/health", h.Health)
+
+	// Protected raw uploads; public transcoded assets
+	r.OPTIONS("/api/v1/media/uploads/*filepath", h.ServeMediaUploadOptions)
+	r.GET("/api/v1/media/uploads/*filepath", middleware.OptionalJWT(), h.ServeMediaUpload)
+	r.GET("/media/transcoded/*filepath", h.ServeMediaPublic)
+	r.GET("/media/avatars/*filepath", h.ServeMediaPublic)
 
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.RateLimit())
@@ -55,6 +57,9 @@ func Setup(opts Options) *gin.Engine {
 		v1.GET("/videos/:id/barrages", h.ListBarrages)
 		v1.POST("/videos/:id/barrages", middleware.JWTAuth(), h.PostBarrage)
 		v1.GET("/videos/:id", h.GetVideo)
+		v1.POST("/videos/upload/init", middleware.JWTAuth(), h.InitChunkUpload)
+		v1.POST("/videos/upload/chunk", middleware.JWTAuth(), h.UploadChunk)
+		v1.POST("/videos/upload/complete", middleware.JWTAuth(), h.CompleteChunkUpload)
 		v1.POST("/videos/upload", middleware.JWTAuth(), h.UploadVideo)
 
 		admin := v1.Group("/admin")
@@ -76,6 +81,10 @@ func Setup(opts Options) *gin.Engine {
 		reviewer.Use(middleware.JWTAuth(), middleware.RequireRole(auth.RoleReviewer, auth.RoleAdmin))
 		{
 			reviewer.GET("/videos", h.ReviewerListVideos)
+			reviewer.POST("/videos/:id/approve-source", h.ReviewerApproveSource)
+			reviewer.POST("/videos/:id/reject-source", h.ReviewerRejectSource)
+			reviewer.POST("/videos/:id/approve-publish", h.ReviewerApprovePublish)
+			reviewer.POST("/videos/:id/reject-publish", h.ReviewerRejectPublish)
 			reviewer.POST("/videos/:id/reject", h.ReviewerDeleteVideo)
 		}
 	}

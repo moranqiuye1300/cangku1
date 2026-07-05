@@ -31,9 +31,17 @@ func New(mediaRoot, publicURL string, timeout time.Duration) *Transcoder {
 }
 
 func (t *Transcoder) Transcode(ctx context.Context, videoID, sourcePath string) (*Result, error) {
+	clean := filepath.ToSlash(filepath.Clean(sourcePath))
+	if strings.Contains(clean, "..") {
+		return nil, fmt.Errorf("invalid source path")
+	}
 	absSource := sourcePath
 	if !filepath.IsAbs(absSource) {
-		absSource = filepath.Join(t.mediaRoot, sourcePath)
+		absSource = filepath.Join(t.mediaRoot, filepath.FromSlash(clean))
+	}
+	mediaRootClean := filepath.Clean(t.mediaRoot)
+	if !strings.HasPrefix(filepath.Clean(absSource), mediaRootClean+string(filepath.Separator)) && filepath.Clean(absSource) != mediaRootClean {
+		return nil, fmt.Errorf("source path outside media root")
 	}
 	if _, err := os.Stat(absSource); err != nil {
 		return nil, fmt.Errorf("source not found: %w", err)

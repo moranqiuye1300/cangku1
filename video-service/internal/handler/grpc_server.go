@@ -44,7 +44,7 @@ func (s *VideoGRPCServer) GetRecommendedFeed(ctx context.Context, req *videopb.G
 }
 
 func (s *VideoGRPCServer) GetVideoInfo(ctx context.Context, req *videopb.GetVideoInfoRequest) (*videopb.GetVideoInfoResponse, error) {
-	v, err := s.svc.GetByID(ctx, req.GetVideoId())
+	v, err := s.svc.GetPublicByID(ctx, req.GetVideoId(), auth.UserIDFromContext(ctx))
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
@@ -55,7 +55,7 @@ func (s *VideoGRPCServer) GetVideoInfo(ctx context.Context, req *videopb.GetVide
 }
 
 func (s *VideoGRPCServer) ListVideosByUser(ctx context.Context, req *videopb.ListVideosByUserRequest) (*videopb.ListVideosByUserResponse, error) {
-	list, total, err := s.svc.ListByUser(ctx, req.GetUserId(), int(req.GetPage()), int(req.GetPageSize()))
+	list, total, err := s.svc.ListByUser(ctx, req.GetUserId(), auth.UserIDFromContext(ctx), int(req.GetPage()), int(req.GetPageSize()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -65,10 +65,13 @@ func (s *VideoGRPCServer) ListVideosByUser(ctx context.Context, req *videopb.Lis
 func (s *VideoGRPCServer) CreateVideo(ctx context.Context, req *videopb.CreateVideoRequest) (*videopb.CreateVideoResponse, error) {
 	userID := auth.UserIDFromContext(ctx)
 	if userID == "" {
-		userID = req.GetUserId()
+		return nil, status.Error(codes.Unauthenticated, "login required")
 	}
-	if userID == "" || req.GetTitle() == "" || req.GetSourcePath() == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id, title and source_path required")
+	if req.GetUserId() != "" && req.GetUserId() != userID {
+		return nil, status.Error(codes.PermissionDenied, "user_id mismatch")
+	}
+	if req.GetTitle() == "" || req.GetSourcePath() == "" {
+		return nil, status.Error(codes.InvalidArgument, "title and source_path required")
 	}
 	v, err := s.svc.Create(ctx, userID, req.GetTitle(), req.GetDescription(), req.GetSourcePath())
 	if err != nil {
@@ -96,14 +99,17 @@ func (s *VideoGRPCServer) ListBarrages(ctx context.Context, req *videopb.ListBar
 	if req.GetVideoId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "video_id required")
 	}
-	list, err := s.svc.ListBarrages(ctx, req.GetVideoId())
+	list, total, err := s.svc.ListBarrages(ctx, req.GetVideoId(), int(req.GetPage()), int(req.GetPageSize()))
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
 		}
+		if strings.Contains(err.Error(), "not published") {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &videopb.ListBarragesResponse{Barrages: toBarrageProtoList(list)}, nil
+	return &videopb.ListBarragesResponse{Barrages: toBarrageProtoList(list), Total: int32(total)}, nil
 }
 
 func (s *VideoGRPCServer) PostBarrage(ctx context.Context, req *videopb.PostBarrageRequest) (*videopb.PostBarrageResponse, error) {
@@ -253,6 +259,9 @@ func (s *VideoGRPCServer) UpdateTranscodeResult(ctx context.Context, req *videop
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
 		}
+		if strings.Contains(err.Error(), "invalid status") || strings.Contains(err.Error(), "cannot publish") {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &videopb.UpdateTranscodeResultResponse{Video: toProto(v)}, nil
@@ -270,14 +279,7 @@ func (s *VideoGRPCServer) AdminSoftDeleteVideo(ctx context.Context, req *videopb
 	if req.GetVideoId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "video_id required")
 	}
-	v, err := s.svc.SoftDeleteVideo(ctx, service.AdminOp{
-		VideoID:          req.GetVideoId(),
-		OperatorID:       req.GetOperatorId(),
-		OperatorUsername: req.GetOperatorUsername(),
-		Reason:           req.GetReason(),
-		IP:               req.GetIp(),
-		UserAgent:        req.GetUserAgent(),
-	})
+	v, err := s.svc.SoftDeleteVideo(ctx, adminOpFromContext(ctx, req.GetVideoId(), req.GetReason(), req.GetIp(), req.GetUserAgent()))
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
@@ -291,13 +293,7 @@ func (s *VideoGRPCServer) AdminRestoreVideo(ctx context.Context, req *videopb.Ad
 	if req.GetVideoId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "video_id required")
 	}
-	v, err := s.svc.RestoreVideo(ctx, service.AdminOp{
-		VideoID:          req.GetVideoId(),
-		OperatorID:       req.GetOperatorId(),
-		OperatorUsername: req.GetOperatorUsername(),
-		IP:               req.GetIp(),
-		UserAgent:        req.GetUserAgent(),
-	})
+	v, err := s.svc.RestoreVideo(ctx, adminOpFromContext(ctx, req.GetVideoId(), "", req.GetIp(), req.GetUserAgent()))
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
@@ -314,13 +310,7 @@ func (s *VideoGRPCServer) AdminPermanentDeleteVideo(ctx context.Context, req *vi
 	if req.GetVideoId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "video_id required")
 	}
-	err := s.svc.PermanentDeleteVideo(ctx, service.AdminOp{
-		VideoID:          req.GetVideoId(),
-		OperatorID:       req.GetOperatorId(),
-		OperatorUsername: req.GetOperatorUsername(),
-		IP:               req.GetIp(),
-		UserAgent:        req.GetUserAgent(),
-	})
+	err := s.svc.PermanentDeleteVideo(ctx, adminOpFromContext(ctx, req.GetVideoId(), "", req.GetIp(), req.GetUserAgent()))
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return nil, status.Error(codes.NotFound, "video not found")
@@ -347,6 +337,74 @@ func (s *VideoGRPCServer) ListAuditLogs(ctx context.Context, req *videopb.ListAu
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &videopb.ListAuditLogsResponse{Logs: toAuditProtoList(list), Total: int32(total)}, nil
+}
+
+func (s *VideoGRPCServer) ReviewerListPending(ctx context.Context, req *videopb.ReviewerListPendingRequest) (*videopb.ReviewerListPendingResponse, error) {
+	list, total, err := s.svc.ListPendingReview(ctx, req.GetStage(), int(req.GetPage()), int(req.GetPageSize()))
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid stage") {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &videopb.ReviewerListPendingResponse{Videos: toAdminProtoList(list), Total: int32(total)}, nil
+}
+
+func (s *VideoGRPCServer) ReviewerApproveSource(ctx context.Context, req *videopb.ReviewerReviewActionRequest) (*videopb.ReviewerReviewActionResponse, error) {
+	v, err := s.svc.ApproveSourceReview(ctx, reviewOpFromProto(ctx, req))
+	if err != nil {
+		return nil, reviewActionError(err)
+	}
+	return &videopb.ReviewerReviewActionResponse{Video: toAdminProto(v)}, nil
+}
+
+func (s *VideoGRPCServer) ReviewerRejectSource(ctx context.Context, req *videopb.ReviewerReviewActionRequest) (*videopb.ReviewerReviewActionResponse, error) {
+	v, err := s.svc.RejectSourceReview(ctx, reviewOpFromProto(ctx, req))
+	if err != nil {
+		return nil, reviewActionError(err)
+	}
+	return &videopb.ReviewerReviewActionResponse{Video: toAdminProto(v)}, nil
+}
+
+func (s *VideoGRPCServer) ReviewerApprovePublish(ctx context.Context, req *videopb.ReviewerReviewActionRequest) (*videopb.ReviewerReviewActionResponse, error) {
+	v, err := s.svc.ApprovePublishReview(ctx, reviewOpFromProto(ctx, req))
+	if err != nil {
+		return nil, reviewActionError(err)
+	}
+	return &videopb.ReviewerReviewActionResponse{Video: toAdminProto(v)}, nil
+}
+
+func (s *VideoGRPCServer) ReviewerRejectPublish(ctx context.Context, req *videopb.ReviewerReviewActionRequest) (*videopb.ReviewerReviewActionResponse, error) {
+	v, err := s.svc.RejectPublishReview(ctx, reviewOpFromProto(ctx, req))
+	if err != nil {
+		return nil, reviewActionError(err)
+	}
+	return &videopb.ReviewerReviewActionResponse{Video: toAdminProto(v)}, nil
+}
+
+func adminOpFromContext(ctx context.Context, videoID, reason, ip, userAgent string) service.AdminOp {
+	return service.AdminOp{
+		VideoID:          videoID,
+		OperatorID:       auth.UserIDFromContext(ctx),
+		OperatorUsername: auth.UsernameFromContext(ctx),
+		Reason:           reason,
+		IP:               ip,
+		UserAgent:        userAgent,
+	}
+}
+
+func reviewOpFromProto(ctx context.Context, req *videopb.ReviewerReviewActionRequest) service.AdminOp {
+	return adminOpFromContext(ctx, req.GetVideoId(), req.GetReason(), req.GetIp(), req.GetUserAgent())
+}
+
+func reviewActionError(err error) error {
+	if err == repository.ErrNotFound {
+		return status.Error(codes.NotFound, "video not found")
+	}
+	if err == repository.ErrStatusConflict || strings.Contains(err.Error(), "not awaiting") || strings.Contains(err.Error(), "invalid stage") || strings.Contains(err.Error(), "invalid status") || strings.Contains(err.Error(), "invalid source") {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 func toProtoList(list []model.Video) []*videopb.Video {
@@ -435,6 +493,7 @@ func toAdminProto(v *model.Video) *videopb.AdminVideo {
 		DeletedBy:    v.DeletedBy,
 		DeleteReason: v.DeleteReason,
 		PurgeAt:      v.PurgeAt,
+		SourcePath:   v.SourcePath,
 	}
 }
 

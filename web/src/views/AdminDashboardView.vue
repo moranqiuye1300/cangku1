@@ -1,6 +1,9 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import PageTabs from '../components/PageTabs.vue'
+import PageSectionHead from '../components/PageSectionHead.vue'
+import UiState from '../components/UiState.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   listUsers,
@@ -31,6 +34,13 @@ const auditTotal = ref(0)
 
 const deleteReason = ref('')
 const pendingDeleteId = ref('')
+
+const adminTabs = [
+  { key: 'users', label: '用户管理' },
+  { key: 'videos', label: '视频管理' },
+  { key: 'recycle', label: '回收站' },
+  { key: 'audit', label: '审计日志' }
+]
 
 const roleOptions = [
   { value: 'user', label: '普通用户' },
@@ -137,8 +147,7 @@ async function permanentDelete(id) {
   }
 }
 
-function switchTab(name) {
-  tab.value = name
+function loadTabData(name) {
   if (name === 'users') loadUsers()
   if (name === 'videos') loadVideos()
   if (name === 'recycle') loadRecycle()
@@ -153,6 +162,8 @@ function videoId(item) {
   return item.video?.id || item.id
 }
 
+watch(tab, loadTabData)
+
 onMounted(() => {
   if (!auth.isAdmin) {
     router.replace('/console/auth')
@@ -163,31 +174,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="admin-page page-wrap">
-    <header class="top">
+  <div class="page-wrap">
+    <header class="page-top">
       <div>
         <h1>管理后台</h1>
         <p>用户管理 · 视频管理 · 回收站（30 天可恢复）· 审计日志（合规留存）</p>
       </div>
-      <div class="actions">
+      <div class="page-top-actions">
         <RouterLink to="/console/review">审核台</RouterLink>
         <RouterLink to="/">返回前台</RouterLink>
       </div>
     </header>
 
-    <nav class="tabs">
-      <button :class="{ active: tab === 'users' }" @click="switchTab('users')">用户管理</button>
-      <button :class="{ active: tab === 'videos' }" @click="switchTab('videos')">视频管理</button>
-      <button :class="{ active: tab === 'recycle' }" @click="switchTab('recycle')">回收站</button>
-      <button :class="{ active: tab === 'audit' }" @click="switchTab('audit')">审计日志</button>
-    </nav>
+    <PageTabs v-model="tab" :tabs="adminTabs" />
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="loading" class="hint">加载中...</p>
+    <p v-if="error" class="text-error">{{ error }}</p>
+    <UiState v-if="loading" type="loading" message="加载中..." />
 
-    <section v-if="tab === 'users'" class="panel card card-body">
-      <h2>用户列表（{{ usersTotal }}）</h2>
-      <table>
+    <section v-else-if="tab === 'users'" class="card card-body">
+      <PageSectionHead title="用户列表" :count="usersTotal" />
+      <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -209,12 +215,12 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
-      <p class="hint">管理员可将普通用户设为「审核员」，审核员可进入审核台下架违规视频。</p>
+      <p class="panel-hint">管理员可将普通用户设为「审核员」，审核员可进入审核台下架违规视频。</p>
     </section>
 
-    <section v-if="tab === 'videos'" class="panel card card-body">
-      <h2>在线视频（{{ videosTotal }}）</h2>
-      <table>
+    <section v-else-if="tab === 'videos'" class="card card-body">
+      <PageSectionHead title="在线视频" :count="videosTotal" />
+      <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -231,28 +237,32 @@ onMounted(() => {
             <td>{{ item.video?.user_id || item.user_id }}</td>
             <td>{{ item.video?.status || item.status }}</td>
             <td>
-              <button class="danger" @click="pendingDeleteId = videoId(item)">删除到回收站</button>
+              <button type="button" class="btn btn-sm btn-danger" @click="pendingDeleteId = videoId(item)">
+                删除到回收站
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
-      <p class="hint">删除后：前台 Feed/搜索/个人页立即不可见，点赞评论收藏弹幕一并清空；后台保留 30 天回收站 + 2 年合规备份 + 审计日志。</p>
+      <p class="panel-hint">
+        删除后：前台 Feed/搜索/个人页立即不可见，点赞评论收藏弹幕一并清空；后台保留 30 天回收站 + 2 年合规备份 + 审计日志。
+      </p>
 
-      <div v-if="pendingDeleteId" class="modal">
-        <div class="modal-body">
+      <div v-if="pendingDeleteId" class="modal-backdrop">
+        <div class="modal-card">
           <h3>删除视频 {{ pendingDeleteId }}</h3>
           <textarea v-model="deleteReason" placeholder="删除原因（可选）" rows="3" />
           <div class="modal-actions">
-            <button @click="pendingDeleteId = ''">取消</button>
-            <button class="danger" @click="confirmDelete">确认删除</button>
+            <button type="button" class="btn btn-ghost" @click="pendingDeleteId = ''">取消</button>
+            <button type="button" class="btn btn-danger" @click="confirmDelete">确认删除</button>
           </div>
         </div>
       </div>
     </section>
 
-    <section v-if="tab === 'recycle'" class="panel card card-body">
-      <h2>回收站（{{ recycleTotal }}）</h2>
-      <table>
+    <section v-else-if="tab === 'recycle'" class="card card-body">
+      <PageSectionHead title="回收站" :count="recycleTotal" />
+      <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -271,17 +281,19 @@ onMounted(() => {
             <td>{{ formatTime(item.purge_at) }}</td>
             <td>{{ item.delete_reason || '-' }}</td>
             <td class="row-actions">
-              <button @click="restoreVideo(videoId(item))">恢复</button>
-              <button class="danger" @click="permanentDelete(videoId(item))">永久删除</button>
+              <button type="button" class="btn btn-sm" @click="restoreVideo(videoId(item))">恢复</button>
+              <button type="button" class="btn btn-sm btn-danger" @click="permanentDelete(videoId(item))">
+                永久删除
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <section v-if="tab === 'audit'" class="panel card card-body">
-      <h2>操作审计（{{ auditTotal }}）</h2>
-      <table>
+    <section v-else-if="tab === 'audit'" class="card card-body">
+      <PageSectionHead title="操作审计" :count="auditTotal" />
+      <table class="data-table">
         <thead>
           <tr>
             <th>时间</th>
@@ -303,172 +315,19 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
-      <p class="hint">审计日志按合规要求长期留存，记录操作者、时间、IP 与设备信息。</p>
+      <p class="panel-hint">审计日志按合规要求长期留存，记录操作者、时间、IP 与设备信息。</p>
     </section>
   </div>
 </template>
 
 <style scoped>
-.admin-page {
-  max-width: 1200px;
-}
-
-.top {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.top h1 {
-  margin: 0 0 6px;
-  font-size: 22px;
-  font-weight: 600;
-}
-
-.top p {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 14px;
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.actions a {
-  color: var(--color-primary);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.tabs button {
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  padding: 8px 14px;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  font: inherit;
-}
-
-.tabs button.active {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  font-weight: 500;
-}
-
-.panel h2 {
-  margin: 0 0 16px;
-  font-size: 18px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-th,
-td {
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-  vertical-align: top;
-}
-
-th {
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-select {
-  background: var(--color-surface);
-  color: var(--color-text);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-}
-
-button {
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font: inherit;
-}
-
-button.danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
-}
-
 .row-actions {
   display: flex;
   gap: 8px;
 }
 
-.hint {
-  margin-top: 12px;
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.error {
-  color: var(--color-danger);
-  margin-bottom: 12px;
-}
-
 .detail {
   max-width: 260px;
   word-break: break-all;
-}
-
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(26, 35, 50, 0.35);
-  display: grid;
-  place-items: center;
-  z-index: 20;
-}
-
-.modal-body {
-  width: min(420px, 92vw);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-
-.modal-body textarea {
-  width: 100%;
-  margin: 12px 0;
-  padding: 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 </style>
