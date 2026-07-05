@@ -174,160 +174,266 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page-wrap">
-    <header class="page-top">
-      <div>
+  <div class="console-page">
+    <div class="console-header">
+      <div class="console-header-text">
         <h1>管理后台</h1>
-        <p>用户管理 · 视频管理 · 回收站（30 天可恢复）· 审计日志（合规留存）</p>
+        <p>用户管理 · 视频管理 · 回收站 · 审计日志</p>
       </div>
-      <div class="page-top-actions">
-        <RouterLink to="/console/review">审核台</RouterLink>
-        <RouterLink to="/">返回前台</RouterLink>
+      <div class="console-header-links">
+        <RouterLink to="/console/review" class="btn btn-ghost btn-sm">审核台</RouterLink>
+        <RouterLink to="/" class="btn btn-ghost btn-sm">返回前台</RouterLink>
       </div>
-    </header>
+    </div>
 
-    <PageTabs v-model="tab" :tabs="adminTabs" />
+    <div class="console-body">
+      <PageTabs v-model="tab" :tabs="adminTabs" />
 
-    <p v-if="error" class="text-error">{{ error }}</p>
-    <UiState v-if="loading" type="loading" message="加载中..." />
+      <p v-if="error" class="text-error console-error">{{ error }}</p>
+      <UiState v-if="loading" type="loading" message="加载中..." />
 
-    <section v-else-if="tab === 'users'" class="card card-body">
-      <PageSectionHead title="用户列表" :count="usersTotal" />
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>用户名</th>
-            <th>昵称</th>
-            <th>角色</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in users" :key="u.id">
-            <td>{{ u.id }}</td>
-            <td>{{ u.username }}</td>
-            <td>{{ u.nickname }}</td>
-            <td>
-              <select :value="u.role || 'user'" @change="changeRole(u, $event.target.value)">
-                <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="panel-hint">管理员可将普通用户设为「审核员」，审核员可进入审核台下架违规视频。</p>
-    </section>
+      <section v-else-if="tab === 'users'" class="console-section">
+        <PageSectionHead title="用户列表" :count="usersTotal" />
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户名</th>
+                <th>昵称</th>
+                <th>角色</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in users" :key="u.id">
+                <td>{{ u.id }}</td>
+                <td>{{ u.username }}</td>
+                <td>{{ u.nickname }}</td>
+                <td>
+                  <select :value="u.role || 'user'" @change="changeRole(u, $event.target.value)">
+                    <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="panel-hint">管理员可将普通用户设为「审核员」，审核员可进入审核台下架违规视频。</p>
+      </section>
 
-    <section v-else-if="tab === 'videos'" class="card card-body">
-      <PageSectionHead title="在线视频" :count="videosTotal" />
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>标题</th>
-            <th>作者</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in videos" :key="videoId(item)">
-            <td>{{ videoId(item) }}</td>
-            <td>{{ videoTitle(item) }}</td>
-            <td>{{ item.video?.user_id || item.user_id }}</td>
-            <td>{{ item.video?.status || item.status }}</td>
-            <td>
-              <button type="button" class="btn btn-sm btn-danger" @click="pendingDeleteId = videoId(item)">
-                删除到回收站
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="panel-hint">
-        删除后：前台 Feed/搜索/个人页立即不可见，点赞评论收藏弹幕一并清空；后台保留 30 天回收站 + 2 年合规备份 + 审计日志。
-      </p>
+      <section v-else-if="tab === 'videos'" class="console-section">
+        <PageSectionHead title="在线视频" :count="videosTotal" />
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>作者</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in videos" :key="videoId(item)">
+                <td>{{ videoId(item) }}</td>
+                <td>{{ videoTitle(item) }}</td>
+                <td>{{ item.video?.user_id || item.user_id }}</td>
+                <td>{{ item.video?.status || item.status }}</td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-danger" @click="pendingDeleteId = videoId(item)">
+                    删除到回收站
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="panel-hint">
+          删除后：前台 Feed/搜索/个人页立即不可见，点赞评论收藏弹幕一并清空；后台保留 30 天回收站 + 2 年合规备份 + 审计日志。
+        </p>
 
-      <div v-if="pendingDeleteId" class="modal-backdrop">
-        <div class="modal-card">
-          <h3>删除视频 {{ pendingDeleteId }}</h3>
-          <textarea v-model="deleteReason" placeholder="删除原因（可选）" rows="3" />
-          <div class="modal-actions">
-            <button type="button" class="btn btn-ghost" @click="pendingDeleteId = ''">取消</button>
-            <button type="button" class="btn btn-danger" @click="confirmDelete">确认删除</button>
+        <div v-if="pendingDeleteId" class="modal-backdrop">
+          <div class="modal-card">
+            <h3>删除视频 #{{ pendingDeleteId }}</h3>
+            <textarea v-model="deleteReason" placeholder="删除原因（可选）" rows="3" />
+            <div class="modal-actions">
+              <button type="button" class="btn btn-ghost" @click="pendingDeleteId = ''">取消</button>
+              <button type="button" class="btn btn-danger" @click="confirmDelete">确认删除</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section v-else-if="tab === 'recycle'" class="card card-body">
-      <PageSectionHead title="回收站" :count="recycleTotal" />
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>标题</th>
-            <th>删除时间</th>
-            <th>过期时间</th>
-            <th>原因</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in recycleVideos" :key="videoId(item)">
-            <td>{{ videoId(item) }}</td>
-            <td>{{ videoTitle(item) }}</td>
-            <td>{{ formatTime(item.deleted_at) }}</td>
-            <td>{{ formatTime(item.purge_at) }}</td>
-            <td>{{ item.delete_reason || '-' }}</td>
-            <td class="row-actions">
-              <button type="button" class="btn btn-sm" @click="restoreVideo(videoId(item))">恢复</button>
-              <button type="button" class="btn btn-sm btn-danger" @click="permanentDelete(videoId(item))">
-                永久删除
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+      <section v-else-if="tab === 'recycle'" class="console-section">
+        <PageSectionHead title="回收站" :count="recycleTotal" />
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>删除时间</th>
+                <th>过期时间</th>
+                <th>原因</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in recycleVideos" :key="videoId(item)">
+                <td>{{ videoId(item) }}</td>
+                <td>{{ videoTitle(item) }}</td>
+                <td>{{ formatTime(item.deleted_at) }}</td>
+                <td>{{ formatTime(item.purge_at) }}</td>
+                <td>{{ item.delete_reason || '-' }}</td>
+                <td class="row-actions">
+                  <button type="button" class="btn btn-sm btn-primary" @click="restoreVideo(videoId(item))">恢复</button>
+                  <button type="button" class="btn btn-sm btn-danger" @click="permanentDelete(videoId(item))">
+                    永久删除
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-    <section v-else-if="tab === 'audit'" class="card card-body">
-      <PageSectionHead title="操作审计" :count="auditTotal" />
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>时间</th>
-            <th>操作</th>
-            <th>操作人</th>
-            <th>目标</th>
-            <th>IP</th>
-            <th>详情</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="log in auditLogs" :key="log.id">
-            <td>{{ formatTime(log.created_at) }}</td>
-            <td>{{ log.action }}</td>
-            <td>{{ log.actor_username }} ({{ log.actor_id }})</td>
-            <td>{{ log.target_type }} / {{ log.target_id }}</td>
-            <td>{{ log.ip }}</td>
-            <td class="detail">{{ log.detail || log.user_agent }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="panel-hint">审计日志按合规要求长期留存，记录操作者、时间、IP 与设备信息。</p>
-    </section>
+      <section v-else-if="tab === 'audit'" class="console-section">
+        <PageSectionHead title="操作审计" :count="auditTotal" />
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>操作</th>
+                <th>操作人</th>
+                <th>目标</th>
+                <th>IP</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="log in auditLogs" :key="log.id">
+                <td>{{ formatTime(log.created_at) }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.actor_username }} ({{ log.actor_id }})</td>
+                <td>{{ log.target_type }} / {{ log.target_id }}</td>
+                <td>{{ log.ip }}</td>
+                <td class="detail-cell">{{ log.detail || log.user_agent }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="panel-hint">审计日志按合规要求长期留存，记录操作者、时间、IP 与设备信息。</p>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.console-page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.console-header-text h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.console-header-text p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+}
+
+.console-header-links {
+  display: flex;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.console-body {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.console-error {
+  margin: var(--space-3) 0;
+}
+
+.console-section {
+  /* card body is handled by console-body */
+}
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrap .data-table {
+  min-width: 600px;
+}
+
+.data-table th {
+  white-space: nowrap;
+}
+
+.data-table select {
+  max-width: 120px;
+}
+
+.data-table .btn-sm {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
 .row-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.detail {
+.detail-cell {
   max-width: 260px;
   word-break: break-all;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.panel-hint {
+  margin-top: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .console-page {
+    padding: var(--space-3);
+  }
+
+  .console-header {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .console-body {
+    padding: var(--space-3);
+  }
 }
 </style>

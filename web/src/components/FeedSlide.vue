@@ -110,6 +110,51 @@ const throttledSaveProgress = throttle((id, time) => {
   saveProgress(id, time)
 }, 2000)
 
+function seekVideo(e) {
+  if (!videoEl.value || !videoDuration.value) return
+  const rect = e.currentTarget.getBoundingClientRect()
+  const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
+  const ratio = Math.max(0, Math.min(1, x / rect.width))
+  const targetTime = ratio * videoDuration.value
+  if (Number.isFinite(targetTime)) {
+    videoEl.value.currentTime = targetTime
+    playbackTime.value = targetTime
+  }
+}
+
+function onProgressClick(e) {
+  seekVideo(e)
+}
+
+let progressDragging = false
+
+function onProgressPointerDown(e) {
+  progressDragging = true
+  seekVideo(e)
+  document.addEventListener('pointermove', onProgressPointerMove)
+  document.addEventListener('pointerup', onProgressPointerUp)
+}
+
+function onProgressPointerMove(e) {
+  if (!progressDragging) return
+  const track = document.querySelector('.progress-track-interactive')
+  if (!track) return
+  const rect = track.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const ratio = Math.max(0, Math.min(1, x / rect.width))
+  const targetTime = ratio * videoDuration.value
+  if (Number.isFinite(targetTime)) {
+    videoEl.value.currentTime = targetTime
+    playbackTime.value = targetTime
+  }
+}
+
+function onProgressPointerUp() {
+  progressDragging = false
+  document.removeEventListener('pointermove', onProgressPointerMove)
+  document.removeEventListener('pointerup', onProgressPointerUp)
+}
+
 function qualityLabel(q) {
   const map = { '1080p': '1080P', '720p': '720P', '480p': '480P', '360p': '360P' }
   return map[q] || q
@@ -667,8 +712,19 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
           <div v-else class="cover placeholder skeleton skeleton--dark" />
         </template>
 
+        <!-- Interactive progress bar at bottom -->
+        <div
+          v-if="renderPlayer && hasPlayUrls(localVideo.play_urls) && videoDuration > 0"
+          class="progress-track-interactive"
+          @click="onProgressClick"
+          @pointerdown="onProgressPointerDown"
+        >
+          <div class="progress-fill" :style="{ width: `${progressPercent}%` }" />
+          <div class="progress-thumb" :style="{ left: `${progressPercent}%` }" />
+        </div>
+
         <div v-if="showSwipeHint" class="swipe-hint" @click.stop>
-          上下滑动 · 切换视频
+          ↑ 上下滑动切换
         </div>
 
         <div v-if="showPlayHint && paused" class="play-hint" aria-hidden="true">
@@ -695,10 +751,8 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
           class="status-banner status-banner--info"
           @click.stop
         >
-          <p>{{ videoStatusLabel('pending_final_review') }}，可预览，尚未公开发布</p>
+          <p>{{ videoStatusLabel('pending_final_review') }}，可预览</p>
         </div>
-
-        <div class="gradient" />
 
         <div class="danmaku-layer" aria-hidden="true">
           <span
@@ -711,193 +765,219 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
           </span>
         </div>
 
-        <footer class="meta" @click.stop>
+        <!-- TikTok-style gradient overlay at bottom -->
+        <div class="gradient-v" />
+
+        <!-- Bottom info section -->
+        <footer class="footer-info" @click.stop>
+          <RouterLink :to="`/users/${localVideo.user_id}`" class="user-info">
+            <span class="user-avatar-mini">{{ (localVideo.user_id || 'U')[0].toUpperCase() }}</span>
+            <span class="user-name">@{{ localVideo.user_id }}</span>
+          </RouterLink>
           <h2 class="title">{{ localVideo.title }}</h2>
           <p v-if="localVideo.tags?.length" class="tags">
             <span v-for="tag in localVideo.tags" :key="tag" class="tag">#{{ tag }}</span>
           </p>
+          <div class="music-info">
+            <span class="music-icon">♫</span>
+            <span class="music-name">{{ localVideo.title || '热门音乐' }}</span>
+          </div>
         </footer>
 
-        <aside class="actions" @click.stop>
-          <RouterLink :to="`/users/${localVideo.user_id}`" class="avatar">
+        <!-- Right side actions - TikTok style -->
+        <aside class="right-actions" @click.stop>
+          <RouterLink :to="`/users/${localVideo.user_id}`" class="avatar-circle">
             {{ (localVideo.user_id || 'U')[0].toUpperCase() }}
           </RouterLink>
 
-          <button
-            type="button"
-            class="action-btn"
-            :class="{ active: engagement.liked }"
-            :disabled="actionLoading"
-            @click="handleLike"
-          >
-            <span class="icon">{{ engagement.liked ? '❤️' : '🤍' }}</span>
-            <span class="label">{{ formatCount(engagement.like_count) }}</span>
-          </button>
+          <div class="action-group">
+            <button
+              type="button"
+              class="action-btn"
+              :class="{ active: engagement.liked }"
+              :disabled="actionLoading"
+              @click="handleLike"
+            >
+              <span class="action-icon">{{ engagement.liked ? '❤️' : '♡' }}</span>
+              <span class="action-count">{{ formatCount(engagement.like_count) || '点赞' }}</span>
+            </button>
 
-          <button type="button" class="action-btn" :class="{ active: commentsOpen }" @click="openComments">
-            <span class="icon">💬</span>
-            <span class="label">{{ formatCount(engagement.comment_count) }}</span>
-          </button>
+            <button type="button" class="action-btn" :class="{ active: commentsOpen }" @click="openComments">
+              <span class="action-icon">💬</span>
+              <span class="action-count">{{ formatCount(engagement.comment_count) || '评论' }}</span>
+            </button>
 
-          <button
-            type="button"
-            class="action-btn"
-            :class="{ active: engagement.favorited }"
-            :disabled="actionLoading"
-            @click="handleFavorite"
-          >
-            <span class="icon">{{ engagement.favorited ? '⭐' : '☆' }}</span>
-            <span class="label">{{ formatCount(engagement.favorite_count) }}</span>
-          </button>
+            <button
+              type="button"
+              class="action-btn"
+              :class="{ active: engagement.favorited }"
+              :disabled="actionLoading"
+              @click="handleFavorite"
+            >
+              <span class="action-icon">{{ engagement.favorited ? '⭐' : '☆' }}</span>
+              <span class="action-count">{{ formatCount(engagement.favorite_count) || '收藏' }}</span>
+            </button>
 
-          <button type="button" class="action-btn" :class="{ active: barrageOpen }" @click="openBarrage">
-            <span class="icon">弹</span>
-            <span class="label">弹幕</span>
-          </button>
+            <button type="button" class="action-btn" :class="{ active: barrageOpen }" @click="openBarrage">
+              <span class="action-icon">弹</span>
+              <span class="action-count">弹幕</span>
+            </button>
+          </div>
+
+          <!-- Music disc spinning -->
+          <div class="music-disc">
+            <div class="disc-inner">♫</div>
+          </div>
         </aside>
 
-        <div v-if="barrageOpen" class="barrage-sheet" @click.stop>
-          <input
-            v-model="barrageText"
-            placeholder="输入弹幕..."
-            maxlength="100"
-            @keyup.enter="sendBarrage"
-          />
-          <button type="button" class="btn btn-primary btn-sm" @click="sendBarrage">发送</button>
-          <button type="button" class="icon-btn icon-btn--ghost" aria-label="关闭弹幕" @click="barrageOpen = false">
-            ✕
-          </button>
+        <!-- Barrage input overlay -->
+        <div v-if="barrageOpen" class="barrage-overlay" @click.stop>
+          <div class="barrage-input-row">
+            <input
+              v-model="barrageText"
+              placeholder="输入弹幕..."
+              maxlength="100"
+              @keyup.enter="sendBarrage"
+            />
+            <button type="button" class="btn btn-primary btn-sm" @click="sendBarrage">发送</button>
+            <button type="button" class="barrage-close" @click="barrageOpen = false">✕</button>
+          </div>
         </div>
 
+        <!-- Bottom controls strip -->
         <div
           v-if="renderPlayer && hasPlayUrls(localVideo.play_urls)"
-          class="playback-bar"
+          class="controls-strip"
           @click.stop
         >
-          <div v-if="videoDuration > 0" class="progress-track" aria-hidden="true">
-            <div class="progress-fill" :style="{ width: `${progressPercent}%` }" />
+          <div class="ctrl-wrap">
+            <button
+              type="button"
+              class="ctrl-btn"
+              :class="{ highlight: needSoundUnlock || muted }"
+              aria-label="音量"
+              :aria-expanded="showVolumePanel"
+              @click="onVolumeBtnClick"
+            >
+              {{ muted || volume === 0 ? '🔇' : '🔊' }}
+            </button>
+            <div v-if="showVolumePanel" class="ctrl-menu ctrl-menu--volume">
+              <button type="button" class="ctrl-menu-item" @click="toggleMute">
+                {{ muted || volume === 0 ? '开启声音' : '静音' }}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                :value="volume"
+                class="volume-slider"
+                @input="onVolumeInput"
+              />
+            </div>
           </div>
-          <div class="playback-bar-inner">
-            <div class="playback-tools">
-              <div class="ctrl-wrap">
-                <button
-                  type="button"
-                  class="icon-btn"
-                  :class="{ highlight: needSoundUnlock || muted }"
-                  aria-label="音量"
-                  :aria-expanded="showVolumePanel"
-                  @click="onVolumeBtnClick"
-                >
-                  {{ muted || volume === 0 ? '🔇' : '🔊' }}
-                </button>
-                <div v-if="showVolumePanel" class="ctrl-menu ctrl-menu--volume">
-                  <button type="button" class="ctrl-menu-item" @click="toggleMute">
-                    {{ muted || volume === 0 ? '开启声音' : '静音' }}
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    :value="volume"
-                    class="volume-slider"
-                    @input="onVolumeInput"
-                  />
-                </div>
-              </div>
 
-              <div class="ctrl-wrap">
-                <button
-                  type="button"
-                  class="icon-btn"
-                  aria-label="播放倍速"
-                  :aria-expanded="showSpeedMenu"
-                  @click.stop="showSpeedMenu = !showSpeedMenu; showQualityMenu = false; showVolumePanel = false"
-                >
-                  {{ speedLabel(playbackRate) }}
-                </button>
-                <div v-if="showSpeedMenu" class="ctrl-menu">
-                  <button
-                    v-for="rate in SPEED_OPTIONS"
-                    :key="rate"
-                    type="button"
-                    class="ctrl-menu-item"
-                    :class="{ active: rate === playbackRate }"
-                    @click="setPlaybackRate(rate)"
-                  >
-                    {{ speedLabel(rate) }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="availableQualities.length" class="ctrl-wrap">
-                <button
-                  type="button"
-                  class="icon-btn"
-                  aria-label="清晰度"
-                  :aria-expanded="showQualityMenu"
-                  @click.stop="showQualityMenu = !showQualityMenu; showSpeedMenu = false; showVolumePanel = false"
-                >
-                  {{ qualityLabel(currentQuality) || 'HD' }}
-                </button>
-                <div v-if="showQualityMenu" class="ctrl-menu" role="menu">
-                  <button
-                    v-for="q in availableQualities"
-                    :key="q"
-                    type="button"
-                    class="ctrl-menu-item"
-                    :class="{ active: q === currentQuality }"
-                    @click="switchQuality(q)"
-                  >
-                    {{ qualityLabel(q) }}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="playback-tools">
+          <div class="ctrl-wrap">
+            <button
+              type="button"
+              class="ctrl-btn"
+              aria-label="倍速"
+              :aria-expanded="showSpeedMenu"
+              @click.stop="showSpeedMenu = !showSpeedMenu; showQualityMenu = false; showVolumePanel = false"
+            >
+              {{ speedLabel(playbackRate) }}
+            </button>
+            <div v-if="showSpeedMenu" class="ctrl-menu">
               <button
-                v-if="showPiP"
+                v-for="rate in SPEED_OPTIONS"
+                :key="rate"
                 type="button"
-                class="icon-btn"
-                aria-label="画中画"
-                @click="togglePiP"
+                class="ctrl-menu-item"
+                :class="{ active: rate === playbackRate }"
+                @click="setPlaybackRate(rate)"
               >
-                ⧉
-              </button>
-              <button type="button" class="icon-btn" aria-label="全屏" @click="toggleFullscreen">
-                ⛶
+                {{ speedLabel(rate) }}
               </button>
             </div>
+          </div>
+
+          <div v-if="availableQualities.length" class="ctrl-wrap">
+            <button
+              type="button"
+              class="ctrl-btn"
+              aria-label="清晰度"
+              :aria-expanded="showQualityMenu"
+              @click.stop="showQualityMenu = !showQualityMenu; showSpeedMenu = false; showVolumePanel = false"
+            >
+              {{ qualityLabel(currentQuality) || 'HD' }}
+            </button>
+            <div v-if="showQualityMenu" class="ctrl-menu" role="menu">
+              <button
+                v-for="q in availableQualities"
+                :key="q"
+                type="button"
+                class="ctrl-menu-item"
+                :class="{ active: q === currentQuality }"
+                @click="switchQuality(q)"
+              >
+                {{ qualityLabel(q) }}
+              </button>
+            </div>
+          </div>
+
+          <div class="ctrl-right">
+            <button
+              v-if="showPiP"
+              type="button"
+              class="ctrl-btn"
+              aria-label="画中画"
+              @click="togglePiP"
+            >
+              ⧉
+            </button>
+            <button type="button" class="ctrl-btn" aria-label="全屏" @click="toggleFullscreen">
+              ⛶
+            </button>
           </div>
         </div>
       </div>
     </div>
 
-    <aside v-if="commentsOpen" class="comment-panel" @click.stop>
-      <header class="comment-head">
-        <h3>评论 {{ formatCount(engagement.comment_count) }}</h3>
-        <button type="button" class="close-btn" @click="commentsOpen = false">✕</button>
-      </header>
-      <div class="comment-list">
-        <div v-if="comments.length" class="comment-items">
-          <div v-for="c in comments" :key="c.id" class="comment-item">
-            <strong>{{ c.username || c.user_id }}</strong>
-            <p>{{ c.content }}</p>
+    <!-- TikTok-style bottom sheet comment panel -->
+    <Teleport to="body">
+      <div v-if="commentsOpen" class="comment-overlay" @click.self="commentsOpen = false">
+        <div class="comment-sheet" @click.stop>
+          <div class="comment-handle" @click="commentsOpen = false">
+            <span class="handle-bar" />
+          </div>
+          <header class="comment-head">
+            <h3>评论 ({{ formatCount(engagement.comment_count) }})</h3>
+            <button type="button" class="close-btn" @click="commentsOpen = false">✕</button>
+          </header>
+          <div class="comment-list">
+            <div v-if="comments.length" class="comment-items">
+              <div v-for="c in comments" :key="c.id" class="comment-item">
+                <div class="comment-avatar">{{ (c.username || c.user_id || 'U')[0].toUpperCase() }}</div>
+                <div class="comment-body">
+                  <strong>{{ c.username || c.user_id }}</strong>
+                  <p>{{ c.content }}</p>
+                </div>
+              </div>
+            </div>
+            <p v-else class="comment-empty">暂无评论，来说两句吧</p>
+          </div>
+          <div class="comment-input">
+            <input
+              v-model="commentText"
+              placeholder="写下你的评论..."
+              maxlength="500"
+              @keyup.enter="submitComment"
+            />
+            <button type="button" @click="submitComment">发送</button>
           </div>
         </div>
-        <p v-else class="comment-empty">暂无评论，来说两句吧</p>
       </div>
-      <div class="comment-input">
-        <input
-          v-model="commentText"
-          placeholder="写下你的评论..."
-          maxlength="500"
-          @keyup.enter="submitComment"
-        />
-        <button type="button" @click="submitComment">发送</button>
-      </div>
-    </aside>
+    </Teleport>
 
     <div v-if="toast" class="toast">{{ toast }}</div>
   </div>
@@ -905,58 +985,93 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 
 <style scoped>
 .slide-root {
-  display: flex;
+  position: relative;
   width: 100%;
-  height: 100%;
-  background: var(--color-surface);
+  height: 100dvh;
+  background: #000;
   overflow: hidden;
 }
 
 .stage {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   height: 100%;
-  transition: flex 0.28s ease;
   cursor: pointer;
-}
-
-.comments-open .stage {
-  flex: 0 0 72%;
 }
 
 .media-wrap {
   position: relative;
-  width: calc(100% - 16px);
-  height: calc(100% - 16px);
-  margin: 8px;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  background: #0f172a;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 12px 40px rgba(15, 23, 42, 0.28);
+  background: #000;
 }
 
 .video,
 .cover {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center center;
+  object-fit: contain;
+  object-position: center;
   display: block;
-  transition: transform 0.28s ease;
-}
-
-.comments-open .video,
-.comments-open .cover {
-  transform: scale(0.96);
-  transform-origin: center center;
 }
 
 .cover.placeholder {
-  background: #111827;
+  background: #111;
 }
 
+/* ===== TikTok-style thin progress bar at top ===== */
+/* ===== Interactive progress bar ===== */
+.progress-track-interactive {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 48px;
+  height: 20px;
+  z-index: 9;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.progress-track-interactive::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.progress-fill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+.progress-thumb {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  transform: translate(-50%, -50%);
+  top: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.progress-track-interactive:hover .progress-thumb {
+  opacity: 1;
+}
+
+/* ===== Play hint ===== */
 .play-hint {
   position: absolute;
   inset: 0;
@@ -977,6 +1092,7 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
   padding-left: 4px;
 }
 
+/* ===== Status banners ===== */
 .status-banner {
   position: absolute;
   top: 50%;
@@ -984,142 +1100,56 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
   transform: translate(-50%, -50%);
   padding: 12px 16px;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
   font-size: 14px;
   text-align: center;
   max-width: 80%;
+  color: #fff;
+}
+
+.status-banner p {
+  margin: 0;
 }
 
 .status-banner--info {
-  top: auto;
-  bottom: 72px;
-  transform: translateX(-50%);
-  background: rgba(37, 99, 235, 0.72);
+  background: rgba(254, 44, 85, 0.8);
 }
 
+/* ===== Swipe hint ===== */
 .swipe-hint {
   position: absolute;
-  top: 16px;
+  top: 60px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: var(--radius-full);
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   pointer-events: none;
   animation: swipe-fade 3.2s ease forwards;
 }
 
 @keyframes swipe-fade {
-  0%,
-  70% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
-.gradient {
+/* ===== Vertical gradient ===== */
+.gradient-v {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 48%;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+  height: 55%;
+  background: linear-gradient(transparent 20%, rgba(0, 0, 0, 0.65));
   pointer-events: none;
-}
-
-.progress-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.15);
   z-index: 1;
 }
 
-.progress-fill {
-  height: 100%;
-  background: var(--color-primary);
-  transition: width 0.12s linear;
-}
-
-.playback-bar {
-  --playback-bar-height: 52px;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 7;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
-}
-
-.playback-bar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: var(--playback-bar-height);
-  padding: 8px 12px 10px;
-}
-
-.playback-tools {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.playback-bar .icon-btn {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-}
-
-.playback-bar .icon-btn.highlight {
-  border-color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.35);
-}
-
-.playback-bar .icon-btn--ghost {
-  background: transparent;
-  border-color: transparent;
-}
-
-.playback-bar .ctrl-wrap {
-  position: relative;
-}
-
-.playback-bar .ctrl-menu {
-  bottom: calc(100% + 8px);
-  left: 0;
-  background: rgba(15, 23, 42, 0.92);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.playback-bar .ctrl-menu-item {
-  color: #e2e8f0;
-}
-
-.playback-bar .ctrl-menu-item:hover,
-.playback-bar .ctrl-menu-item.active {
-  background: rgba(37, 99, 235, 0.35);
-  color: #fff;
-}
-
+/* ===== Danmaku ===== */
 .danmaku-layer {
   position: absolute;
   inset: 0;
@@ -1131,43 +1161,130 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 .danmaku-item {
   position: absolute;
   left: 100%;
-  top: 0;
   padding: 3px 12px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.42);
+  background: rgba(0, 0, 0, 0.5);
   font-size: 16px;
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 1px 2px #000;
-  -webkit-text-stroke: 0.4px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
   animation: danmaku-fly 9s linear forwards;
   will-change: transform;
 }
 
 @keyframes danmaku-fly {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(calc(-100% - 100vw));
-  }
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100% - 100vw)); }
 }
 
-.actions {
+/* ===== Bottom footer info (TikTok style) ===== */
+.footer-info {
   position: absolute;
-  right: 10px;
-  bottom: calc(52px + env(safe-area-inset-bottom, 0px) + 16px);
+  left: 12px;
+  right: 80px;
+  bottom: 60px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.footer-info .user-info,
+.footer-info .tags .tag {
+  pointer-events: auto;
+}
+
+.user-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  text-decoration: none;
+}
+
+.user-avatar-mini {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  display: grid;
+  place-items: center;
+  background: #334155;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.user-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #fff;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.tag {
+  font-size: 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.music-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.music-icon {
+  display: inline-block;
+  font-size: 14px;
+  animation: music-spin 3s linear infinite;
+}
+
+@keyframes music-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.music-name {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ===== Right side actions (TikTok style) ===== */
+.right-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   z-index: 4;
 }
 
-.avatar {
-  width: 48px;
-  height: 48px;
+.avatar-circle {
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 2px solid #fff;
   display: grid;
@@ -1175,128 +1292,165 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
   background: #334155;
   color: #fff;
   font-weight: 700;
+  font-size: 16px;
   text-decoration: none;
-  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.action-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .action-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   border: none;
   background: none;
   color: #fff;
   cursor: pointer;
-  padding: 6px;
-  min-width: 48px;
-  min-height: 44px;
-  border-radius: var(--radius-md);
+  padding: 4px;
+  min-width: 44px;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.12s ease, background 0.15s ease;
-}
-
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  transition: transform 0.12s ease;
 }
 
 .action-btn:active:not(:disabled) {
-  transform: scale(0.94);
+  transform: scale(0.88);
 }
 
 .action-btn:disabled {
   opacity: 0.6;
 }
 
-.action-btn.active .label {
-  color: #f472b6;
+.action-icon {
+  font-size: 26px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  line-height: 1.2;
 }
 
-.action-btn .icon {
-  font-size: 28px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-}
-
-.action-btn .label {
+.action-count {
   font-size: 11px;
-  color: #e2e8f0;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
 }
 
-.meta {
+.action-btn.active .action-icon {
+  filter: drop-shadow(0 0 4px rgba(254, 44, 85, 0.5));
+}
+
+/* ===== Music disc ===== */
+.music-disc {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  margin-top: 4px;
+  animation: music-spin 4s linear infinite;
+}
+
+.disc-inner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--color-primary-gradient);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #fff;
+}
+
+/* ===== Barrage overlay ===== */
+.barrage-overlay {
   position: absolute;
-  left: 0;
-  right: 72px;
-  bottom: calc(52px + env(safe-area-inset-bottom, 0px));
-  padding: 12px 14px 10px;
-  z-index: 3;
-  pointer-events: none;
+  left: 8px;
+  right: 8px;
+  bottom: 60px;
+  z-index: 7;
 }
 
-.meta .tag {
-  pointer-events: auto;
-}
-
-.barrage-sheet {
-  position: absolute;
-  left: 12px;
-  right: 72px;
-  bottom: calc(52px + env(safe-area-inset-bottom, 0px) + 8px);
-  z-index: 6;
+.barrage-input-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(8px);
 }
 
-.barrage-sheet input {
+.barrage-input-row input {
   flex: 1;
   min-width: 0;
   padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+.barrage-input-row input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.barrage-close {
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+/* ===== Bottom controls strip ===== */
+.controls-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  z-index: 7;
+  padding: 0 8px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.5));
+}
+
+.ctrl-btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: none;
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
-  font-size: 16px;
-}
-
-.barrage-sheet input::placeholder {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.barrage-sheet .btn-sm {
-  padding: 7px 14px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.title {
-  margin: 0 0 6px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-}
-
-.tag {
   font-size: 12px;
-  color: #fff;
-  background: rgba(37, 99, 235, 0.75);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ctrl-btn.highlight {
+  background: rgba(254, 44, 85, 0.35);
+}
+
+.ctrl-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
 }
 
 .ctrl-wrap {
@@ -1305,25 +1459,25 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 
 .ctrl-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
   min-width: 88px;
   padding: 6px;
   border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-float);
+  background: rgba(15, 15, 15, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transform-origin: bottom left;
-  animation: menu-in 0.18s ease;
+  backdrop-filter: blur(12px);
+  animation: menu-in 0.15s ease;
 }
 
 @keyframes menu-in {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.96);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -1339,61 +1493,86 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 .ctrl-menu-item {
   border: none;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   text-align: left;
   padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .ctrl-menu-item:hover,
 .ctrl-menu-item.active {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+  background: rgba(254, 44, 85, 0.25);
+  color: #fff;
 }
 
 .volume-slider {
   width: 100%;
   margin-top: 8px;
-  accent-color: #2563eb;
+  accent-color: #fe2c55;
 }
 
-.comment-panel {
-  flex: 0 0 28%;
-  min-width: 0;
-  height: 100%;
+/* ===== TikTok-style bottom comment sheet ===== */
+.comment-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: var(--z-overlay);
+  animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.comment-sheet {
+  width: 100%;
+  max-width: 500px;
+  max-height: 75vh;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
-  z-index: 5;
-  animation: slide-in 0.28s ease;
+  animation: sheet-up 0.3s ease;
+  overflow: hidden;
 }
 
-@keyframes slide-in {
-  from {
-    transform: translateX(100%);
-    opacity: 0.6;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.comment-handle {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  cursor: pointer;
+}
+
+.handle-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
 }
 
 .comment-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 12px 10px;
-  padding-top: max(14px, env(safe-area-inset-top));
+  padding: 8px 16px 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .comment-head h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--color-text);
 }
 
@@ -1409,32 +1588,50 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 .comment-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 12px;
+  padding: 8px 16px;
 }
 
 .comment-items {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
-.comment-item strong {
+.comment-item {
+  display: flex;
+  gap: 10px;
+}
+
+.comment-avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 50%;
+  background: #334155;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.comment-body strong {
   display: block;
   font-size: 13px;
-  color: var(--color-text);
-  margin-bottom: 4px;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
 }
 
-.comment-item p {
+.comment-body p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
   word-break: break-word;
 }
 
 .comment-empty {
-  margin: 24px 0;
+  margin: 32px 0;
   text-align: center;
   color: var(--color-text-muted);
   font-size: 13px;
@@ -1443,39 +1640,48 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
 .comment-input {
   display: flex;
   gap: 8px;
-  padding: 10px 12px 16px;
+  padding: 10px 16px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .comment-input input {
   flex: 1;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
   color: var(--color-text);
-  font-size: 16px;
+  font-size: 14px;
+  outline: none;
+}
+
+.comment-input input:focus {
+  border-color: var(--color-primary);
 }
 
 .comment-input button {
-  padding: 8px 12px;
+  padding: 8px 18px;
   border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-gradient);
   color: #fff;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 
+/* ===== Toast ===== */
 .toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  top: 72px;
+  top: 48px;
   transform: translateX(-50%);
   z-index: var(--z-toast);
-  padding: 8px 16px;
+  padding: 8px 18px;
   border-radius: var(--radius-full);
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   color: var(--color-text);
   font-size: 13px;
@@ -1484,18 +1690,54 @@ defineExpose({ togglePlay, toggleMute, toggleFullscreen })
   box-shadow: var(--shadow-float);
 }
 
-@media (max-width: 640px) {
-  .player-controls {
-    flex-wrap: wrap;
-    max-width: calc(100vw - 100px);
+@media (max-width: 768px) {
+  .slide-root {
+    height: 100dvh;
   }
 
-  .comments-open .stage {
-    flex: 0 0 62%;
+  .footer-info {
+    left: 10px;
+    right: 64px;
+    bottom: 56px;
   }
 
-  .comment-panel {
-    flex: 0 0 38%;
+  .right-actions {
+    right: 4px;
+    bottom: 120px;
+    gap: 4px;
+  }
+
+  .avatar-circle {
+    width: 38px;
+    height: 38px;
+    font-size: 14px;
+  }
+
+  .action-icon {
+    font-size: 22px;
+  }
+
+  .action-count {
+    font-size: 10px;
+  }
+
+  .music-disc {
+    width: 36px;
+    height: 36px;
+  }
+
+  .disc-inner {
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+  }
+
+  .controls-strip {
+    height: 44px;
+  }
+
+  .comment-sheet {
+    max-height: 85vh;
   }
 }
 </style>

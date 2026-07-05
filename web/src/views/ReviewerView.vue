@@ -134,94 +134,98 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page-wrap">
-    <header class="page-top">
-      <div>
+  <div class="review-page">
+    <div class="review-header">
+      <div class="review-header-text">
         <h1>审核员工作台</h1>
         <p>源片快审通过后进入转码；精审通过后发布到推荐/发现/搜索。驳回后前台不可见并进入回收站。</p>
       </div>
-      <div class="page-top-actions">
-        <RouterLink v-if="auth.isAdmin" to="/console">管理后台</RouterLink>
-        <RouterLink to="/">返回前台</RouterLink>
+      <div class="review-header-links">
+        <RouterLink v-if="auth.isAdmin" to="/console" class="btn btn-ghost btn-sm">管理后台</RouterLink>
+        <RouterLink to="/" class="btn btn-ghost btn-sm">返回前台</RouterLink>
       </div>
-    </header>
+    </div>
 
-    <PageTabs v-model="activeTab" :tabs="tabs" />
+    <div class="review-body">
+      <PageTabs v-model="activeTab" :tabs="tabs" />
 
-    <p v-if="error" class="text-error">{{ error }}</p>
-    <UiState v-if="loading" type="loading" message="加载中..." />
+      <p v-if="error" class="text-error review-error">{{ error }}</p>
+      <UiState v-if="loading" type="loading" message="加载中..." />
 
-    <section v-else class="card card-body">
-      <PageSectionHead
-        :title="activeTab === 'source' ? '待源审视频' : '待精审视频'"
-        :count="total"
-      />
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>标题</th>
-            <th>作者</th>
-            <th>状态</th>
-            <th>预览</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="!videos.length">
-            <td colspan="6" class="empty-cell">暂无待审视频</td>
-          </tr>
-          <tr v-for="item in videos" :key="videoId(item)">
-            <td>{{ videoId(item) }}</td>
-            <td>{{ videoTitle(item) }}</td>
-            <td>{{ item.video?.user_id || item.user_id }}</td>
-            <td>{{ videoStatusLabel(item.video?.status || item.status) }}</td>
-            <td>
-              <button
-                v-if="activeTab === 'source' && sourcePath(item)"
-                type="button"
-                class="btn btn-sm btn-ghost preview-btn"
-                @click="previewSource(item)"
-              >
-                预览原片
-              </button>
-              <template v-else-if="activeTab === 'final'">
-                <img
-                  v-if="coverUrl(item)"
-                  :src="coverUrl(item)"
-                  alt=""
-                  class="cover-thumb"
-                />
-                <RouterLink :to="{ path: '/', query: { v: videoId(item) } }" target="_blank">
-                  预览 HLS
-                </RouterLink>
-              </template>
-              <span v-else>-</span>
-            </td>
-            <td class="action-cell">
-              <button
-                type="button"
-                class="btn btn-sm btn-primary"
-                @click="submitApprove(videoId(item))"
-              >
-                {{ activeTab === 'source' ? '通过' : '发布' }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-danger"
-                @click="openReject(videoId(item), activeTab)"
-              >
-                驳回
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+      <section v-else>
+        <PageSectionHead
+          :title="activeTab === 'source' ? '待源审视频' : '待精审视频'"
+          :count="total"
+        />
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>作者</th>
+                <th>状态</th>
+                <th>预览</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!videos.length">
+                <td colspan="6" class="empty-cell">暂无待审视频</td>
+              </tr>
+              <tr v-for="item in videos" :key="videoId(item)">
+                <td>{{ videoId(item) }}</td>
+                <td>{{ videoTitle(item) }}</td>
+                <td>{{ item.video?.user_id || item.user_id }}</td>
+                <td>{{ videoStatusLabel(item.video?.status || item.status) }}</td>
+                <td>
+                  <button
+                    v-if="activeTab === 'source' && sourcePath(item)"
+                    type="button"
+                    class="btn btn-sm btn-ghost preview-btn"
+                    @click="previewSource(item)"
+                  >
+                    预览原片
+                  </button>
+                  <template v-else-if="activeTab === 'final'">
+                    <img
+                      v-if="coverUrl(item)"
+                      :src="coverUrl(item)"
+                      alt=""
+                      class="cover-thumb"
+                    />
+                    <RouterLink :to="{ path: '/', query: { v: videoId(item) } }" target="_blank" class="hls-link">
+                      预览 HLS
+                    </RouterLink>
+                  </template>
+                  <span v-else class="text-muted">-</span>
+                </td>
+                <td class="action-cell">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    @click="submitApprove(videoId(item))"
+                  >
+                    {{ activeTab === 'source' ? '通过' : '发布' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-danger"
+                    @click="openReject(videoId(item), activeTab)"
+                  >
+                    驳回
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
 
     <div v-if="actionId" class="modal-backdrop">
       <div class="modal-card">
-        <h3>驳回视频 {{ actionId }}</h3>
+        <h3>驳回视频 #{{ actionId }}</h3>
         <textarea v-model="rejectReason" placeholder="驳回原因（必填）" rows="4" />
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" @click="closeModal">取消</button>
@@ -233,6 +237,61 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.review-page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+.review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.review-header-text h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.review-header-text p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+  max-width: 52ch;
+}
+
+.review-header-links {
+  display: flex;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.review-body {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.review-error {
+  margin: var(--space-3) 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table th {
+  white-space: nowrap;
+}
+
 .cover-thumb {
   width: 72px;
   height: 40px;
@@ -240,6 +299,10 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   vertical-align: middle;
   margin-right: 8px;
+}
+
+.hls-link {
+  font-size: 13px;
 }
 
 .action-cell {
@@ -252,5 +315,21 @@ onMounted(() => {
   text-align: center;
   color: var(--color-text-muted);
   padding: 24px;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .review-page {
+    padding: var(--space-3);
+  }
+
+  .review-header {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .review-body {
+    padding: var(--space-3);
+  }
 }
 </style>

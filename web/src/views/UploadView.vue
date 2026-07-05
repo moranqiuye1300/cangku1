@@ -97,10 +97,12 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="page-center">
-    <form class="card card-body-lg upload-form" @submit.prevent="handleSubmit">
-      <h1 class="page-title">上传视频</h1>
-      <p class="page-desc">上传后需经源片快审与精审发布，通过后才会出现在推荐与发现页</p>
+  <div class="page-center upload-page">
+    <form class="upload-form" @submit.prevent="handleSubmit">
+      <div class="upload-header">
+        <h1 class="upload-title">上传视频</h1>
+        <p class="upload-desc">上传后需经源片快审与精审发布，通过后才会出现在推荐与发现页</p>
+      </div>
 
       <div class="upload-steps" role="list">
         <div class="upload-step" role="listitem">
@@ -117,54 +119,151 @@ async function handleSubmit() {
         </div>
       </div>
 
-      <label class="field">
-        标题
-        <input v-model="title" required maxlength="80" placeholder="给视频起个标题" />
-      </label>
-      <label class="field">
-        简介
-        <textarea v-model="description" rows="3" maxlength="300" placeholder="可选，介绍视频内容" />
-      </label>
+      <div class="form-body">
+        <label class="field">
+          标题
+          <input v-model="title" required maxlength="80" placeholder="给视频起个标题" />
+        </label>
+        <label class="field">
+          简介
+          <textarea v-model="description" rows="3" maxlength="300" placeholder="可选，介绍视频内容" />
+        </label>
 
-      <div
-        class="drop-zone"
-        :class="{ 'drop-zone--active': dragOver }"
-        @dragover.prevent="dragOver = true"
-        @dragleave.prevent="dragOver = false"
-        @drop.prevent="onDrop"
-        @click="pickFile"
-      >
-        <input ref="fileInput" type="file" accept="video/*" @change="onFileChange" />
-        <span v-if="fileName">{{ fileName }}</span>
-        <template v-else>
-          <span>点击或拖拽视频到此处</span>
-          <span class="text-muted" style="font-size: 12px">支持常见视频格式，最大 200MB</span>
-        </template>
+        <div
+          class="drop-zone"
+          :class="{ 'drop-zone--active': dragOver }"
+          @dragover.prevent="dragOver = true"
+          @dragleave.prevent="dragOver = false"
+          @drop.prevent="onDrop"
+          @click="pickFile"
+        >
+          <input ref="fileInput" type="file" accept="video/*" @change="onFileChange" />
+          <div class="drop-icon">⊕</div>
+          <span v-if="fileName" class="file-name">{{ fileName }}</span>
+          <template v-else>
+            <span class="drop-text">点击或拖拽视频到此处</span>
+            <span class="drop-hint">支持常见视频格式，最大 200MB</span>
+          </template>
+        </div>
+
+        <div v-if="loading" class="upload-progress" aria-label="上传进度">
+          <div class="upload-progress__bar" :style="{ width: progress + '%' }"></div>
+        </div>
+        <p v-if="progressText" class="progress-text">{{ progressText }}</p>
+        <p v-if="error" class="text-error">{{ error }}</p>
+        <p v-if="message" class="text-success">{{ message }}</p>
+
+        <button type="submit" class="btn btn-primary btn-block upload-submit" :disabled="loading">
+          {{ loading ? '上传中...' : '开始上传' }}
+        </button>
       </div>
-
-      <div v-if="loading" class="upload-progress" aria-label="上传进度">
-        <div class="upload-progress__bar" :style="{ width: progress + '%' }"></div>
-      </div>
-      <p v-if="progressText" class="text-muted">{{ progressText }}</p>
-      <p v-if="error" class="text-error">{{ error }}</p>
-      <p v-if="message" class="text-success">{{ message }}</p>
-
-      <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
-        {{ loading ? '上传中...' : '开始上传' }}
-      </button>
     </form>
   </div>
 </template>
 
 <style scoped>
+.upload-page {
+  min-height: calc(100vh - var(--header-height));
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-bg);
+}
+
 .upload-form {
   width: min(560px, 100%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.upload-header {
+  padding: 24px 24px 0;
+}
+
+.upload-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.upload-desc {
+  margin: 0 0 16px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.upload-steps {
+  margin: 0 24px;
+}
+
+.form-body {
+  padding: 0 24px 24px;
+}
+
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 20px;
+  margin-bottom: var(--space-4);
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.drop-zone:hover,
+.drop-zone--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.drop-zone input {
+  display: none;
+}
+
+.drop-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 24px;
+  font-weight: 300;
+}
+
+.drop-text {
+  font-size: 15px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.drop-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.file-name {
+  font-size: 14px;
+  color: var(--color-accent);
+  font-weight: 500;
 }
 
 .upload-progress {
   width: 100%;
-  height: 8px;
-  background: #eef2ff;
+  height: 6px;
+  background: var(--color-surface-elevated);
   border-radius: 999px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -172,7 +271,17 @@ async function handleSubmit() {
 
 .upload-progress__bar {
   height: 100%;
-  background: linear-gradient(90deg, #4f46e5, #06b6d4);
+  background: var(--color-primary-gradient);
   transition: width 0.2s ease;
+}
+
+.progress-text {
+  margin: 0 0 8px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.upload-submit {
+  margin-top: 4px;
 }
 </style>

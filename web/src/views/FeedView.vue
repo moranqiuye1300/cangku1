@@ -32,6 +32,61 @@ const aiMessages = ref([])
 const aiInput = ref('')
 const aiLoading = ref(false)
 
+// Draggable AI button position
+const aiBtnPos = ref({ bottom: 80, right: 20 })
+let aiDragging = false
+let aiDragStart = { x: 0, y: 0, bottom: 0, right: 0 }
+
+function onAiBtnPointerDown(e) {
+  aiDragging = true
+  const touch = e.touches?.[0] || e
+  aiDragStart = {
+    x: touch.clientX,
+    y: touch.clientY,
+    bottom: aiBtnPos.value.bottom,
+    right: aiBtnPos.value.right
+  }
+  document.addEventListener('pointermove', onAiBtnPointerMove)
+  document.addEventListener('pointerup', onAiBtnPointerUp)
+  document.addEventListener('touchmove', onAiBtnTouchMove, { passive: false })
+  document.addEventListener('touchend', onAiBtnTouchEnd)
+}
+
+function onAiBtnPointerMove(e) {
+  if (!aiDragging) return
+  const dx = (e.clientX || 0) - aiDragStart.x
+  const dy = (e.clientY || 0) - aiDragStart.y
+  aiBtnPos.value = {
+    bottom: Math.max(8, aiDragStart.bottom - dy),
+    right: Math.max(8, aiDragStart.right - dx)
+  }
+}
+
+function onAiBtnPointerUp() {
+  if (!aiDragging) return
+  aiDragging = false
+  document.removeEventListener('pointermove', onAiBtnPointerMove)
+  document.removeEventListener('pointerup', onAiBtnPointerUp)
+  document.removeEventListener('touchmove', onAiBtnTouchMove)
+  document.removeEventListener('touchend', onAiBtnTouchEnd)
+}
+
+function onAiBtnTouchMove(e) {
+  if (!aiDragging) return
+  e.preventDefault()
+  const touch = e.touches[0]
+  const dx = touch.clientX - aiDragStart.x
+  const dy = touch.clientY - aiDragStart.y
+  aiBtnPos.value = {
+    bottom: Math.max(8, aiDragStart.bottom - dy),
+    right: Math.max(8, aiDragStart.right - dx)
+  }
+}
+
+function onAiBtnTouchEnd() {
+  onAiBtnPointerUp()
+}
+
 provide('feedSoundUnlock', { soundUnlocked })
 
 const startVideoId = computed(() => String(route.query.v || ''))
@@ -262,80 +317,90 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="feed-page">
-    <div class="feed-inner">
-      <section v-if="initialLoading" class="feed-skeleton">
-        <div v-for="n in 2" :key="n" class="skeleton-slide skeleton" />
-      </section>
+    <section v-if="initialLoading" class="feed-skeleton">
+      <div v-for="n in 2" :key="n" class="skeleton-slide skeleton" />
+    </section>
 
-      <UiState
-        v-else-if="error && !videos.length"
-        type="empty"
-        :message="error"
-        retry
-        @retry="retryLoad"
-      />
+    <UiState
+      v-else-if="error && !videos.length"
+      type="empty"
+      :message="error"
+      retry
+      @retry="retryLoad"
+    />
 
-      <UiState v-else-if="!loading && !videos.length" type="empty" message="暂无视频，先去投稿吧">
-        <RouterLink to="/upload" class="btn btn-primary">上传视频</RouterLink>
-      </UiState>
+    <UiState v-else-if="!loading && !videos.length" type="empty" message="暂无视频，先去投稿吧">
+      <RouterLink to="/upload" class="btn btn-primary">上传视频</RouterLink>
+    </UiState>
 
-      <template v-else>
-        <p v-if="showPersonalizedTip" class="feed-personalized-tip">已为你个性化推荐</p>
+    <template v-else>
+      <p v-if="showPersonalizedTip" class="feed-personalized-tip">已为你个性化推荐</p>
 
-        <div ref="feedEl" class="feed-scroller" @click="unlockFeedSound">
-          <article
-            v-for="(video, index) in videos"
-            :key="video.id"
-            class="feed-slide"
-            :data-index="index"
-          >
-            <FeedSlide
-              :ref="(el) => setSlideRef(index, el)"
-              :video="video"
-              :active="index === currentIndex"
-              :render-player="shouldRenderPlayer(index)"
-            />
-          </article>
-        </div>
-
-        <div v-if="loading && videos.length" class="loading-hint">
-          <span class="loading-dot" />加载更多...
-        </div>
-      </template>
-
-      <!-- AI Chat for recommended Feed videos -->
-      <button
-        class="ai-float-btn"
-        @click="openAIChat"
-        title="问问推荐视频的 AI"
-      >
-        AI 问答
-      </button>
-
-      <div v-if="showAIChat" class="ai-chat-panel">
-        <div class="ai-chat-header">
-          <span>推荐视频 AI 问答</span>
-          <button class="ai-close" @click="showAIChat = false">×</button>
-        </div>
-        <div class="ai-chat-body">
-          <div
-            v-for="(msg, idx) in aiMessages"
-            :key="idx"
-            :class="['ai-msg', msg.role]"
-          >
-            {{ msg.content }}
-          </div>
-          <div v-if="aiLoading" class="ai-msg assistant">思考中...</div>
-        </div>
-        <div class="ai-chat-input">
-          <input
-            v-model="aiInput"
-            @keyup.enter="sendAIMessage"
-            placeholder="针对当前推荐视频提问..."
-            :disabled="aiLoading"
+      <div ref="feedEl" class="feed-scroller" @click="unlockFeedSound">
+        <article
+          v-for="(video, index) in videos"
+          :key="video.id"
+          class="feed-slide"
+          :data-index="index"
+        >
+          <FeedSlide
+            :ref="(el) => setSlideRef(index, el)"
+            :video="video"
+            :active="index === currentIndex"
+            :render-player="shouldRenderPlayer(index)"
           />
-          <button @click="sendAIMessage" :disabled="aiLoading || !aiInput.trim()">发送</button>
+        </article>
+      </div>
+
+      <div v-if="loading && videos.length" class="loading-hint">
+        <span class="loading-dot" />正在加载...
+      </div>
+    </template>
+
+    <!-- Draggable AI Chat button -->
+    <button
+      class="ai-float-btn"
+      :style="{
+        bottom: aiBtnPos.bottom + 'px',
+        right: aiBtnPos.right + 'px'
+      }"
+      @pointerdown="onAiBtnPointerDown"
+      @click="openAIChat"
+      title="拖动可移动 · 点击打开 AI"
+    >
+      AI
+    </button>
+
+    <div
+      v-if="showAIChat"
+      class="ai-chat-panel"
+      :style="{
+        bottom: (aiBtnPos.bottom + 56) + 'px',
+        right: aiBtnPos.right + 'px'
+      }"
+    >
+      <div class="ai-chat-header">
+        <span>推荐视频 AI</span>
+        <button class="ai-close" @click="showAIChat = false">✕</button>
+      </div>
+      <div class="ai-chat-body">
+        <div
+          v-for="(msg, idx) in aiMessages"
+          :key="idx"
+          :class="['ai-msg', msg.role]"
+        >
+          {{ msg.content }}
         </div>
+        <div v-if="aiLoading" class="ai-msg assistant">思考中...</div>
+      </div>
+      <div class="ai-chat-input">
+        <input
+          v-model="aiInput"
+          @keyup.enter="sendAIMessage"
+          placeholder="针对当前视频提问..."
+          :disabled="aiLoading"
+        />
+        <button @click="sendAIMessage" :disabled="aiLoading || !aiInput.trim()">发送</button>
       </div>
     </div>
   </div>
@@ -346,17 +411,8 @@ onBeforeUnmount(() => {
   height: calc(100dvh - var(--header-height));
   background: var(--color-bg);
   overflow: hidden;
-}
-
-.feed-inner {
-  position: relative;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  height: 100%;
-  padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .feed-personalized-tip {
@@ -384,10 +440,7 @@ onBeforeUnmount(() => {
   scroll-behavior: smooth;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
+  background: var(--color-bg);
 }
 
 .feed-scroller::-webkit-scrollbar {
@@ -405,18 +458,16 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   overflow: hidden;
 }
 
 .skeleton-slide {
   flex: 1;
-  border-radius: var(--radius-lg);
 }
 
 .loading-hint {
-  position: absolute;
-  bottom: var(--space-4);
+  position: fixed;
+  bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -425,34 +476,47 @@ onBeforeUnmount(() => {
   gap: var(--space-2);
   padding: 6px 14px;
   border-radius: var(--radius-full);
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 /* AI Chat styles */
 .ai-float-btn {
   position: fixed;
-  bottom: 32px;
-  right: 32px;
   z-index: 100;
-  padding: 10px 18px;
-  border-radius: 9999px;
-  background: var(--color-primary);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-primary-gradient);
   color: white;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(254, 44, 85, 0.4);
   border: none;
-  cursor: pointer;
+  cursor: grab;
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s ease;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ai-float-btn:active {
+  cursor: grabbing;
+  transform: scale(0.92);
 }
 
 .ai-chat-panel {
   position: fixed;
-  bottom: 90px;
-  right: 32px;
   width: 380px;
   max-height: 520px;
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   z-index: 110;
@@ -461,18 +525,22 @@ onBeforeUnmount(() => {
 
 .ai-chat-header {
   padding: 10px 14px;
-  background: var(--color-bg);
+  background: var(--color-surface);
   font-weight: 600;
+  color: var(--color-text);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .ai-close {
   border: none;
   background: none;
-  font-size: 22px;
+  font-size: 20px;
   cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 4px 6px;
 }
 
 .ai-chat-body {
@@ -494,11 +562,13 @@ onBeforeUnmount(() => {
   background: var(--color-primary);
   color: white;
   align-self: flex-end;
+  margin-left: auto;
 }
 
 .ai-msg.assistant {
-  background: #f1f5f9;
-  align-self: flex-start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
 }
 
 .ai-chat-input {
@@ -506,21 +576,36 @@ onBeforeUnmount(() => {
   padding: 10px;
   border-top: 1px solid var(--color-border);
   gap: 8px;
+  background: var(--color-surface);
 }
 
 .ai-chat-input input {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 9999px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.ai-chat-input input:focus {
+  border-color: var(--color-primary);
 }
 
 .ai-chat-input button {
-  padding: 0 16px;
-  border-radius: 9999px;
-  background: var(--color-primary);
+  padding: 0 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-gradient);
   color: white;
   border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-chat-input button:disabled {
+  opacity: 0.5;
 }
 
 .loading-dot {
@@ -539,6 +624,23 @@ onBeforeUnmount(() => {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@media (max-width: 768px) {
+  .feed-page {
+    height: 100dvh;
+  }
+
+  .ai-chat-panel {
+    width: calc(100vw - 24px);
+    max-height: 60vh;
+  }
+
+  .ai-float-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 12px;
   }
 }
 </style>

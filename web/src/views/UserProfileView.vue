@@ -33,9 +33,9 @@ const isSelf = computed(() => auth.user?.id === route.params.id)
 const tabs = computed(() => {
   if (!isSelf.value) return []
   return [
-    { key: 'uploads', label: '我上传的' },
-    { key: 'likes', label: '我点赞的' },
-    { key: 'favorites', label: '我收藏的' }
+    { key: 'uploads', label: '作品' },
+    { key: 'likes', label: '点赞' },
+    { key: 'favorites', label: '收藏' }
   ]
 })
 
@@ -139,117 +139,199 @@ watch(activeTab, (val, oldVal) => {
 </script>
 
 <template>
-  <div class="page-wrap">
+  <div class="profile-page">
     <UiState v-if="loading && !user" type="loading" message="加载中..." />
     <UiState v-else-if="error && !user" type="empty" :message="error" />
     <template v-else-if="user">
-      <section class="profile card card-body">
-        <div class="avatar-wrap">
-          <UserAvatar :user="user" :size="72" />
-          <button
-            v-if="isSelf"
-            type="button"
-            class="avatar-edit"
-            :disabled="uploading"
-            @click="pickAvatar"
-          >
-            {{ uploading ? '上传中...' : '更换头像' }}
-          </button>
-          <input
-            ref="fileInput"
-            type="file"
-            accept="image/*"
-            class="hidden-input"
-            @change="onAvatarChange"
-          />
-        </div>
-        <div class="profile-meta">
-          <h1>{{ user.nickname || user.username }}</h1>
-          <p>@{{ user.username }} · 加入于 {{ formatDate(user.created_at) }}</p>
-          <div class="stats-row">
-            <div class="stat-item">
+      <!-- Profile header -->
+      <section class="profile-header">
+        <div class="profile-cover" />
+        <div class="profile-info">
+          <div class="avatar-section">
+            <UserAvatar :user="user" :size="80" />
+            <button
+              v-if="isSelf"
+              type="button"
+              class="avatar-edit-btn"
+              :disabled="uploading"
+              @click="pickAvatar"
+            >
+              {{ uploading ? '...' : '📷' }}
+            </button>
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/*"
+              class="hidden-input"
+              @change="onAvatarChange"
+            />
+          </div>
+          <h1 class="profile-name">{{ user.nickname || user.username }}</h1>
+          <p class="profile-username">@{{ user.username }} · {{ formatDate(user.created_at) }}</p>
+          <div class="profile-stats">
+            <div class="stat">
               <strong>{{ total }}</strong>
-              <span>{{ isSelf && activeTab === 'uploads' ? '作品' : '视频' }}</span>
+              <span>作品</span>
             </div>
           </div>
         </div>
       </section>
 
-      <PageTabs v-if="tabs.length" v-model="activeTab" :tabs="tabs" />
+      <!-- Tabs -->
+      <div class="profile-tabs">
+        <PageTabs v-if="tabs.length" v-model="activeTab" :tabs="tabs" />
+      </div>
 
-      <UiState v-if="loading" type="loading" message="加载中..." />
-      <UiState v-else-if="error" type="empty" :message="error" retry @retry="reloadVideos" />
-      <UiState
-        v-else-if="!videos.length && isSelf && activeTab === 'uploads'"
-        message="你还没有发布视频，上传后将进入审核流程"
-      >
-        <RouterLink to="/upload" class="btn btn-primary">去投稿</RouterLink>
-      </UiState>
-      <VideoGrid v-else-if="!videos.length" :empty="true" :empty-message="emptyText" />
-      <VideoGrid v-else>
-        <VideoCard
-          v-for="item in videos"
-          :key="item.id"
-          :video="item"
-          :show-status="isSelf && activeTab === 'uploads'"
-        />
-      </VideoGrid>
+      <!-- Content -->
+      <div class="profile-content">
+        <UiState v-if="loading" type="loading" message="加载中..." />
+        <UiState v-else-if="error" type="empty" :message="error" retry @retry="reloadVideos" />
+        <UiState
+          v-else-if="!videos.length && isSelf && activeTab === 'uploads'"
+          message="你还没有发布视频，上传后将进入审核流程"
+        >
+          <RouterLink to="/upload" class="btn btn-primary">去投稿</RouterLink>
+        </UiState>
+        <VideoGrid v-else-if="!videos.length" :empty="true" :empty-message="emptyText" />
+        <VideoGrid v-else>
+          <VideoCard
+            v-for="item in videos"
+            :key="item.id"
+            :video="item"
+            :show-status="isSelf && activeTab === 'uploads'"
+          />
+        </VideoGrid>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
+.profile-page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0;
 }
 
-.avatar-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+.profile-header {
+  position: relative;
+  text-align: center;
+  padding-bottom: 20px;
 }
 
-.avatar-edit {
-  padding: 4px 12px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  font-size: 12px;
+.profile-cover {
+  height: 160px;
+  background: linear-gradient(135deg, #1a0a0f, #0a0f1a, #0f0f0f);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profile-info {
+  position: relative;
+  margin-top: -40px;
+  padding: 0 16px;
+}
+
+.avatar-section {
+  position: relative;
+  display: inline-block;
+}
+
+.avatar-edit-btn {
+  position: absolute;
+  bottom: 0;
+  right: -4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--color-surface);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 14px;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.12s ease;
 }
 
-.avatar-edit:disabled {
+.avatar-edit-btn:active {
+  transform: scale(0.9);
+}
+
+.avatar-edit-btn:disabled {
   opacity: 0.6;
-  cursor: wait;
 }
 
 .hidden-input {
   display: none;
 }
 
-h1 {
-  margin: 0 0 6px;
+.profile-name {
+  margin: 12px 0 4px;
   font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
-.profile-meta {
-  flex: 1;
-  min-width: 0;
+.profile-username {
+  margin: 0 0 16px;
+  color: var(--color-text-muted);
+  font-size: 14px;
 }
 
-.profile-meta h1 {
-  margin: 0 0 6px;
-  font-size: 22px;
+.profile-stats {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
 }
 
-.profile-meta p {
-  margin: 0;
-  color: var(--color-text-secondary);
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
+.stat strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.stat span {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.profile-tabs {
+  padding: 0 16px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+
+.profile-tabs :deep(.tab-group) {
+  margin-bottom: 0;
+}
+
+.profile-content {
+  padding: 0 8px 16px;
+}
+
+@media (min-width: 768px) {
+  .profile-page {
+    padding: 0 24px;
+  }
+
+  .profile-cover {
+    height: 200px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+
+  .profile-content {
+    padding: 0 0 24px;
+  }
+
+  .profile-tabs {
+    padding: 0;
+  }
+}
 </style>

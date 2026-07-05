@@ -45,7 +45,7 @@ defineEmits(['retry'])
   width: 32px;
   height: 32px;
   margin: 0 auto;
-  border: 3px solid rgba(37, 99, 235, 0.2);
+  border: 3px solid rgba(254, 44, 85, 0.2);
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: ui-spin 0.7s linear infinite;

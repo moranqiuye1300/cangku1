@@ -87,6 +87,11 @@ async function handleSubmit() {
   font-size: 14px;
 }
 
+.foot a {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
 .btn-block + .btn-block {
   margin-top: 10px;
 }

@@ -31,7 +31,7 @@ const statusBadgeClass = computed(() => {
 </script>
 
 <template>
-  <RouterLink :to="linkTo" class="card video-card">
+  <RouterLink :to="linkTo" class="video-card">
     <div class="cover-wrap">
       <img
         v-if="video.cover_url"
@@ -44,7 +44,10 @@ const statusBadgeClass = computed(() => {
       <div v-else class="cover placeholder">
         <span class="placeholder-letter">{{ placeholderInitial }}</span>
       </div>
-      <span class="play-overlay" aria-hidden="true">▶</span>
+      <div class="cover-overlay" />
+      <div class="play-icon-overlay" aria-hidden="true">
+        <span class="play-triangle">▶</span>
+      </div>
       <span
         v-if="showStatus && video.status"
         class="status-badge"
@@ -53,12 +56,8 @@ const statusBadgeClass = computed(() => {
         {{ statusLabel }}
       </span>
       <span v-if="video.duration" class="duration">{{ formatDuration(video.duration) }}</span>
-    </div>
-    <div class="info">
-      <h3 class="line-clamp-2">{{ video.title }}</h3>
-      <p v-if="video.description" class="line-clamp-2">{{ video.description }}</p>
-      <div class="meta">
-        <span>@{{ video.user_id }}</span>
+      <div class="card-title-overlay">
+        <h3 class="title-text">{{ video.title }}</h3>
       </div>
     </div>
   </RouterLink>
@@ -70,25 +69,24 @@ const statusBadgeClass = computed(() => {
   text-decoration: none;
   color: inherit;
   overflow: hidden;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+  border-radius: var(--radius-md);
+  transition: transform 0.15s ease;
 }
 
 .video-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+  transform: scale(1.02);
 }
 
 .video-card:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .cover-wrap {
   position: relative;
-  aspect-ratio: 16 / 9;
-  background: linear-gradient(145deg, #e8eef5, #dbeafe);
-  border-bottom: 1px solid var(--color-border);
+  aspect-ratio: 9 / 16;
+  background: var(--color-surface-elevated);
   overflow: hidden;
+  border-radius: var(--radius-md);
 }
 
 .cover {
@@ -99,7 +97,7 @@ const statusBadgeClass = computed(() => {
 }
 
 .video-card:hover .cover {
-  transform: scale(1.03);
+  transform: scale(1.05);
 }
 
 .placeholder {
@@ -108,37 +106,53 @@ const statusBadgeClass = computed(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #c7d2fe, #93c5fd);
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
 }
 
 .placeholder-letter {
   font-size: 36px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 1px 2px rgba(37, 99, 235, 0.3);
+  color: rgba(255, 255, 255, 0.4);
 }
 
-.play-overlay {
+.cover-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 60%, rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+}
+
+.play-icon-overlay {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 28px;
-  color: #fff;
-  background: rgba(26, 35, 50, 0.25);
   opacity: 0;
   transition: opacity 0.2s ease;
+  background: rgba(0, 0, 0, 0.15);
 }
 
-.video-card:hover .play-overlay {
+.video-card:hover .play-icon-overlay {
   opacity: 1;
+}
+
+.play-triangle {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 18px;
+  padding-left: 3px;
 }
 
 .status-badge {
   position: absolute;
-  left: 8px;
-  top: 8px;
-  padding: 3px 8px;
+  left: 6px;
+  top: 6px;
+  padding: 2px 8px;
   border-radius: var(--radius-sm);
   font-size: 11px;
   font-weight: 500;
@@ -147,54 +161,47 @@ const statusBadgeClass = computed(() => {
 }
 
 .status-badge--ready {
-  background: rgba(5, 150, 105, 0.88);
+  background: rgba(37, 244, 238, 0.85);
 }
 
 .status-badge--failed {
-  background: rgba(220, 38, 38, 0.88);
+  background: rgba(254, 44, 85, 0.85);
 }
 
 .status-badge--pending {
-  background: rgba(180, 83, 9, 0.88);
+  background: rgba(255, 193, 7, 0.85);
 }
 
 .duration {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  background: rgba(26, 35, 50, 0.72);
+  right: 6px;
+  bottom: 34px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   z-index: 1;
 }
 
-.info {
-  padding: 14px 16px;
+.card-title-overlay {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  z-index: 1;
 }
 
-h3 {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--color-text);
-}
-
-p {
-  margin: 0 0 10px;
-  color: var(--color-text-secondary);
+.title-text {
+  margin: 0;
   font-size: 13px;
-  line-height: 1.5;
-}
-
-.meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--color-text-muted);
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 </style>

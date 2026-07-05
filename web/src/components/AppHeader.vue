@@ -1,11 +1,12 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import UserAvatar from './UserAvatar.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const menuOpen = ref(false)
 
 function handleLogout() {
@@ -31,12 +32,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         <span class="brand-mark">SV</span>
         <span class="brand-copy">
           <span class="brand-text">短视频</span>
-          <span class="brand-slogan">发现 · 创作 · 分享</span>
         </span>
       </RouterLink>
       <nav class="nav" aria-label="主导航">
-        <RouterLink to="/">推荐</RouterLink>
-        <RouterLink to="/discover">发现</RouterLink>
+        <RouterLink to="/" :class="{ active: route.path === '/' }">推荐</RouterLink>
+        <RouterLink to="/discover" :class="{ active: route.path === '/discover' }">发现</RouterLink>
         <RouterLink v-if="auth.isLoggedIn" to="/upload">上传</RouterLink>
       </nav>
       <div class="actions">
@@ -46,6 +46,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
           class="btn btn-ghost btn-sm console-link"
         >
           审核台
+        </RouterLink>
+        <RouterLink
+          v-if="auth.isAdmin"
+          to="/console"
+          class="btn btn-ghost btn-sm console-link"
+        >
+          管理
         </RouterLink>
         <template v-if="!auth.isLoggedIn">
           <RouterLink to="/login" class="btn btn-ghost btn-sm">登录</RouterLink>
@@ -64,7 +71,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
           </button>
           <div v-if="menuOpen" class="user-menu-panel">
             <RouterLink :to="`/users/${auth.user.id}`" @click="menuOpen = false">我的主页</RouterLink>
-            <RouterLink v-if="auth.isAdmin" to="/console" @click="menuOpen = false">管理后台</RouterLink>
             <button type="button" @click="handleLogout">退出登录</button>
           </div>
         </div>
@@ -79,9 +85,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   top: 0;
   z-index: var(--z-header);
   height: var(--header-height);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(15, 15, 15, 0.88);
   border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .header-inner {
@@ -109,7 +116,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   display: grid;
   place-items: center;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--color-primary-gradient);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -118,49 +125,54 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .brand-copy {
   display: flex;
   flex-direction: column;
-  gap: 1px;
 }
 
 .brand-text {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: 1.2;
-}
-
-.brand-slogan {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  font-weight: 400;
+  background: var(--color-primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .nav {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 4px;
   flex: 1;
 }
 
 .nav a {
-  padding: 8px 14px;
-  border: 1px solid transparent;
+  padding: 8px 16px;
   border-radius: var(--radius-full);
   color: var(--color-text-secondary);
   text-decoration: none;
-  font-size: var(--text-base);
+  font-size: 15px;
   font-weight: 500;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .nav a:hover {
-  border-color: var(--color-border-strong);
-  color: var(--color-primary);
+  background: var(--glass-bg);
+  color: var(--color-text);
 }
 
-.nav a.router-link-active {
-  background: var(--color-primary-soft);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+.nav a.active {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.nav a.active::after {
+  content: '';
+  display: block;
+  height: 3px;
+  width: 20px;
+  margin: 2px auto 0;
+  border-radius: 2px;
+  background: var(--color-primary-gradient);
 }
 
 .actions {
@@ -195,6 +207,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   cursor: pointer;
   font: inherit;
   color: var(--color-text);
+  transition: border-color 0.15s ease;
+}
+
+.user-menu-trigger:hover {
+  border-color: var(--color-primary);
 }
 
 .user-menu-name {
@@ -212,7 +229,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   top: calc(100% + 8px);
   min-width: 160px;
   padding: 6px;
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-float);
@@ -241,9 +258,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   color: var(--color-primary);
 }
 
-@media (max-width: 640px) {
-  .brand-slogan,
-  .user-menu-name {
+/* Hide header on mobile */
+@media (max-width: 768px) {
+  .header {
     display: none;
   }
 }
